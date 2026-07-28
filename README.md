@@ -65,13 +65,18 @@ pnpm dev          # → http://localhost:5173
 |---|---|---|
 | Ruch | W / A / S / D | Lewa gałka |
 | Celowanie | Pozycja kursora | Prawa gałka |
-| Atak podstawowy (combo 3-ciosowe) | LPM | RT |
-| Atak ciężki (ładowany 0.9 s) | PPM lub przytrzymanie LPM po ciosie | LT |
+| Atak podstawowy (combo 3-ciosowe) | LPM **lub J / C** | RT |
+| Atak ciężki (ładowany 0.9 s) | **K / V** lub PPM lub przytrzymanie LPM po ciosie | LT |
 | Unik (i-frames 0.10–0.42 s) | Spacja | A |
 | Sprint | Shift | LS |
 | Mikstura | 1 | X |
 | Ekwipunek i atrybuty | I | — |
 | Menu / pauza | Esc lub **Tab** | Menu |
+
+> **Trackpad (MacBook).** Stuknięcie dwoma palcami w środku walki jest niewykonalne,
+> więc oba ataki mają pełnoprawne odpowiedniki klawiaturowe pod lewą ręką na WASD:
+> **J / C** zastępuje LPM, **K / V** zastępuje PPM. Przytrzymanie klawisza ataku
+> ładuje cios ciężki tak samo jak przytrzymanie przycisku myszy.
 
 > **Esc a fullscreen.** W trybie pełnoekranowym przeglądarka przechwytuje Esc, więc
 > menu jest również pod Tab (GDD §4.2).
@@ -104,6 +109,29 @@ ekwipunek z 9 slotami, sprzedaż, porównanie z założonym.
 **Pętla sesyjna (GDD §9.2)** — encountery lekki → średni → ciężki, oddech co trzeci
 (zasada 3/1), mini-boss co piąty, rosnący poziom strefy.
 
+### Utrzymanie zdrowia — dwa pokrętła w `data/combat.json`
+
+| Pole | Domyślnie | Znaczenie |
+|---|---:|---|
+| `player.hpRegen` | `1` | Pasywna regeneracja w HP/s. `0` wyłącza całkowicie. |
+| `player.killHealPct` | `0.1` | Ułamek **maksymalnego HP zabitego wroga** zwracany graczowi. `0` wyłącza. |
+
+Leczenie skaluje się z twardością celu, więc mini-boss (1800 HP bazowo) oddaje
+znacznie więcej niż goblin. Zwrot pokazuje się jako zielona liczba nad postacią.
+
+> Świadome odstępstwo od GDD §5.1, który zakłada **brak** regeneracji HP
+> („tylko mikstury / lifesteal"). Obie wartości są w danych, więc powrót do
+> wersji z dokumentu to ustawienie ich na `0` — bez dotykania kodu.
+
+**Postacie** — każda encja ma własną sylwetkę rysowaną proceduralnie
+(`render/characters.ts`): bohater z tarczą i mieczem, goblin z uszami i sztyletem,
+goblin z oszczepem, szkielet z żebrami i tarczą, szkielet z łukiem, pełzacz
+z odnóżami i workami jadu, ork z kłami i toporem, szaman w szacie z kosturem,
+rycerz w rogatym hełmie z dwuręcznym mieczem. Postać odbija się w poziomie zgodnie
+z kierunkiem patrzenia, a hit flash to nakładana addytywnie biała kopia sylwetki,
+więc nie psuje palety. Paleta idzie z `color` w `data/enemies.json`, więc pozostaje
+sterowana danymi. Podgląd wszystkich sylwetek: `pnpm gallery` (dev).
+
 **Interfejs (GDD §10)** — HUD w DOM (Svelte 5), paski HP/stamina/XP, sloty mikstur,
 pasek bossa z break barem, wskaźniki zagrożenia poza kadrem, winieta niskiego HP,
 ekwipunek, pauza, opcje, cztery poziomy trudności.
@@ -130,7 +158,7 @@ oraz przy wyczyszczeniu encounteru, awansie i utracie widoczności karty.
 | Backend Phoenix (`/api`, `balance:live`, `/admin`, Oban, Postgres) | M3 | Klient ma gotowego klienta HTTP/WS i tryb offline; `docker compose --profile backend up db` podnosi samą bazę |
 | Drzewko umiejętności (3 gałęzie) | M6 | Punkty umiejętności są naliczane i zapisywane |
 | Hub, 4 strefy, pokoje z Tiled, boss finałowy | M5–M6 | Zamiast tego jedna arena z narastającymi encounterami |
-| Sprity, atlasy, animacje | M5 | Świadomy greybox — GDD §15: sztuka wchodzi dopiero w M5 |
+| Animacje klatkowe, atlasy sprite'ów | M5 | Sylwetki są rysowane proceduralnie i nieanimowane — pozy statyczne, reakcje przez skalę, przechył i błysk |
 | Sprzedawca, respec, reroll afiksów | M4–M5 | Sprzedaż przedmiotów działa |
 
 ---

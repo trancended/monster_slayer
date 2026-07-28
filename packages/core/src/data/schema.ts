@@ -36,6 +36,10 @@ export const CombatSchema = z.object({
   version: z.number(),
   player: z.object({
     maxHp: z.number(),
+    /** Pasywna regeneracja HP na sekundę. 0 wyłącza. */
+    hpRegen: z.number(),
+    /** Ułamek max HP zabitego wroga zwracany graczowi jako leczenie. 0 wyłącza. */
+    killHealPct: z.number(),
     maxStamina: z.number(),
     staminaRegen: z.number(),
     staminaRegenDelay: z.number(),

@@ -292,6 +292,13 @@ export class World {
       this.potionHealRemaining -= heal;
     }
 
+    // — pasywna regeneracja HP. Świadome odstępstwo od GDD §5.1 („brak
+    //   regeneracji, tylko mikstury / lifesteal") na życzenie projektowe.
+    //   Wyłącza się ustawieniem `player.hpRegen` na 0 w data/combat.json.
+    if (c.player.hpRegen > 0 && s.hp[p] < s.maxHp[p]) {
+      s.hp[p] = Math.min(s.maxHp[p], s.hp[p] + c.player.hpRegen * dt);
+    }
+
     // — regeneracja poise i staminy
     this.poise = Math.min(this.derived.maxPoise, this.poise + c.player.poiseRegen * dt);
     if (this.staminaDelay > 0) this.staminaDelay -= dt;
@@ -847,6 +854,17 @@ export class World {
     this.character.totalKills++;
     this.sessionKills++;
     this.releaseToken(e);
+
+    // — leczenie za zabójstwo: ułamek maksymalnego HP celu, czyli twardsi
+    //   wrogowie realnie się opłacają. Sterowane `player.killHealPct`.
+    const killHealPct = this.balance.combat.player.killHealPct;
+    if (killHealPct > 0 && s.state[this.player] !== PState.Dead) {
+      const p = this.player;
+      const before = s.hp[p];
+      s.hp[p] = Math.min(s.maxHp[p], before + s.maxHp[e] * killHealPct);
+      const healed = s.hp[p] - before;
+      if (healed >= 1) this.bus.emit("player:healed", { amount: healed, hp: s.hp[p] });
+    }
 
     // Pełzacz Zarazy eksploduje także po śmierci — presja na repozycję.
     if (def.attack.kind === "explode") this.explode(e, def, true);

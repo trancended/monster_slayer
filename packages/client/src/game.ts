@@ -118,6 +118,12 @@ export class Game {
       this.renderer.spawnDamageNumber(e.amount, e.x, e.y, e.crit, e.element);
     });
 
+    bus.on("player:healed", (e) => {
+      const s = this.world.store;
+      const p = this.world.player;
+      this.renderer.spawnDamageNumber(e.amount, s.x[p]!, s.y[p]!, false, "heal");
+    });
+
     bus.on("hitstop", (e) => {
       this.loop.requestHitstop(e.seconds);
       if (e.slowMoDuration > 0) this.loop.requestSlowMo(e.slowMoScale, e.slowMoDuration);

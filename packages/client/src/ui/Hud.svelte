@@ -100,7 +100,7 @@
     <small>Unik</small>
   </div>
   <div class="slot heavy" style="--charge:{hud.heavyCharge * 100}%">
-    <span class="mono">PPM</span>
+    <span class="mono">K / PPM</span>
     <small>Ciężki</small>
     {#if hud.heavyCharge > 0}
       <i class="charge" style="height:{hud.heavyCharge * 100}%"></i>

@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r typecheck",
     "e2e": "playwright test",
     "e2e:prod": "E2E_BASE_URL=http://localhost:8080 playwright test",
-    "shot": "playwright test tests/shot.spec.ts"
+    "shot": "PW_TOOLS=true playwright test tests/shot.spec.ts",
+    "gallery": "PW_TOOLS=true playwright test tests/gallery.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",

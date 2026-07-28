@@ -2,9 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
-  // `shot` i `diag` to narzędzia diagnostyczne, nie testy regresji —
-  // uruchamia się je jawnie: `pnpm exec playwright test tests/shot.spec.ts`.
-  testIgnore: ["**/shot.spec.ts", "**/diag.spec.ts"],
+  // `shot` i `diag` to narzędzia diagnostyczne, nie testy regresji — domyślnie
+  // wypadają z przebiegu. `PW_TOOLS=true` je odblokowuje (patrz `pnpm shot`).
+  testIgnore: process.env.PW_TOOLS === "true" ? [] : ["**/shot.spec.ts", "**/diag.spec.ts", "**/gallery.spec.ts"],
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

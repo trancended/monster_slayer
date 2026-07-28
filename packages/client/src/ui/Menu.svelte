@@ -37,15 +37,20 @@
         <h2>Sterowanie</h2>
         <dl>
           <dt>W A S D</dt><dd>Ruch</dd>
-          <dt>Mysz</dt><dd>Celowanie</dd>
-          <dt>LPM</dt><dd>Combo 3-ciosowe (przytrzymaj po ciosie → ładowanie)</dd>
-          <dt>PPM</dt><dd>Atak ciężki (ładowany 0.9 s)</dd>
+          <dt>Mysz / trackpad</dt><dd>Celowanie</dd>
+          <dt>LPM <em>lub</em> J / C</dt><dd>Combo 3-ciosowe (przytrzymaj po ciosie → ładowanie)</dd>
+          <dt>K / V <em>lub</em> PPM</dt><dd>Atak ciężki (ładowany 0.9 s)</dd>
           <dt>Spacja</dt><dd>Unik — i-frames 0.10–0.42 s</dd>
           <dt>Shift</dt><dd>Sprint</dd>
           <dt>1</dt><dd>Mikstura (leczy 45% HP w 1.5 s)</dd>
           <dt>I</dt><dd>Ekwipunek i atrybuty</dd>
           <dt>Esc / Tab</dt><dd>Menu</dd>
         </dl>
+        <p class="trackpad">
+          Na trackpadzie MacBooka stuknięcie dwoma palcami w trakcie walki jest
+          niewygodne — <strong>K</strong> i <strong>V</strong> robią dokładnie to,
+          co PPM, a <strong>J</strong> i <strong>C</strong> zastępują LPM.
+        </p>
       </div>
     </div>
   </div>
@@ -242,6 +247,21 @@
   dd {
     margin: 0;
     color: var(--muted);
+  }
+  dt em {
+    color: var(--muted);
+    font-style: normal;
+    font-family: var(--font);
+  }
+  .trackpad {
+    margin: 14px 0 0;
+    font-size: 0.8em;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .trackpad strong {
+    color: var(--accent);
+    font-family: var(--mono);
   }
   section {
     margin-bottom: 22px;

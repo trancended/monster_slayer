@@ -2,6 +2,8 @@
   "version": 1,
   "player": {
     "maxHp": 100,
+    "hpRegen": 1,
+    "killHealPct": 0.1,
     "maxStamina": 100,
     "staminaRegen": 22,
     "staminaRegenDelay": 0.6,

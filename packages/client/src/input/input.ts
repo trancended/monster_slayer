@@ -10,6 +10,8 @@ export type Action =
   | "moveDown"
   | "moveLeft"
   | "moveRight"
+  | "attack"
+  | "heavy"
   | "dodge"
   | "sprint"
   | "potion"
@@ -22,6 +24,11 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   moveDown: ["KeyS", "ArrowDown"],
   moveLeft: ["KeyA", "ArrowLeft"],
   moveRight: ["KeyD", "ArrowRight"],
+  // Trackpad MacBooka klika lewym bez problemu, ale prawy przycisk to
+  // stuknięcie dwoma palcami — niewykonalne w środku walki. Dlatego oba ataki
+  // mają pełnoprawne odpowiedniki klawiaturowe pod lewą ręką na WASD.
+  attack: ["KeyJ", "KeyC"],
+  heavy: ["KeyK", "KeyV"],
   dodge: ["Space"],
   sprint: ["ShiftLeft", "ShiftRight"],
   potion: ["Digit1"],
@@ -31,10 +38,13 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   highlightLoot: ["AltLeft", "AltRight"],
 };
 
-/** Klawisze przechwytywane przez przeglądarkę — nie wolno ich mapować. */
+/**
+ * Klawisze przechwytywane przez przeglądarkę — nie wolno ich mapować.
+ * Skróty z Ctrl/Cmd (Ctrl+W, Ctrl+T) są odsiewane osobno, sprawdzaniem
+ * modyfikatorów w `keydown`, bo blokuje je kombinacja, a nie sam klawisz.
+ */
 export const FORBIDDEN_CODES = new Set([
   "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
-  "KeyW", // tylko w kombinacji z Ctrl — obsłużone przez sprawdzanie modyfikatorów
 ]);
 
 export interface InputCallbacks {
@@ -54,6 +64,8 @@ export class InputManager {
   private rightPressed = false;
   private dodgePressed = false;
   private potionPressed = false;
+  private keyAttackPressed = false;
+  private keyHeavyPressed = false;
 
   gamepadIndex: number | null = null;
   highlightLoot = false;
@@ -88,6 +100,8 @@ export class InputManager {
       if (this.matches("inventory", e.code)) this.cb.onInventoryToggle();
       if (this.matches("dodge", e.code)) this.dodgePressed = true;
       if (this.matches("potion", e.code)) this.potionPressed = true;
+      if (this.matches("attack", e.code)) this.keyAttackPressed = true;
+      if (this.matches("heavy", e.code)) this.keyHeavyPressed = true;
       if (this.matches("highlightLoot", e.code)) this.highlightLoot = true;
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -170,9 +184,11 @@ export class InputManager {
     let sprint = this.isDown("sprint");
     let dodge = this.dodgePressed;
     let potion = this.potionPressed;
-    let attackPressed = this.mousePressed;
-    let attackHeld = this.mouseDown;
-    let heavyPressed = this.rightPressed;
+    // Mysz i klawiatura są równorzędne — przytrzymanie klawisza ataku ładuje
+    // cios ciężki dokładnie tak samo jak przytrzymanie LPM.
+    let attackPressed = this.mousePressed || this.keyAttackPressed;
+    let attackHeld = this.mouseDown || this.isDown("attack");
+    let heavyPressed = this.rightPressed || this.keyHeavyPressed;
 
     const pad = this.readGamepad();
     if (pad) {
@@ -208,6 +224,8 @@ export class InputManager {
     this.rightPressed = false;
     this.dodgePressed = false;
     this.potionPressed = false;
+    this.keyAttackPressed = false;
+    this.keyHeavyPressed = false;
   }
 
   private padPrev = { attack: false, heavy: false, dodge: false, potion: false };

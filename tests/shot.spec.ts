@@ -31,4 +31,10 @@ test("zrzut z walki", async ({ page }) => {
     await page.waitForTimeout(100);
   }
   await page.screenshot({ path: "tests/artifacts/combat.png" });
+  // Zbliżenie na okolicę gracza — do oceny czytelności sylwetek.
+  await page.screenshot({
+    path: "tests/artifacts/combat-zoom.png",
+    clip: { x: cx - 260, y: cy - 200, width: 520, height: 300 },
+    scale: "css",
+  });
 });

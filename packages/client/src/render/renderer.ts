@@ -8,7 +8,8 @@ import { Application, Container, Graphics, Sprite, Text, TextStyle, Texture } fr
 import { ARENA_RADIUS, EState, Flag, Kind, PState, type World } from "@ms/core";
 import { Camera } from "./camera.ts";
 import { depth, ISO_H, ISO_W, isoX, isoY } from "./iso.ts";
-import { archetypeOf, makeBody, makeFacingMarker, makeShadow, type Archetype } from "./shapes.ts";
+import { makeFacingMarker, makeShadow } from "./shapes.ts";
+import { characterHeight, drawCharacter } from "./characters.ts";
 
 const COLORS = {
   ground: 0x0b0e14,
@@ -36,13 +37,19 @@ const RARITY_COLORS: Record<string, number> = {
 
 interface EntityView {
   root: Container;
+  /** Kontener sylwetki — jego `scale.x` odbija postać w lewo/prawo. */
+  bodyWrap: Container;
   body: Graphics;
+  /** Biała kopia sylwetki, addytywna — hit flash bez psucia kolorów postaci. */
+  flash: Graphics | null;
   shadow: Graphics;
   facing: Graphics | null;
   hpBg: Sprite | null;
   hpFill: Sprite | null;
   outline: Graphics | null;
   baseTint: number;
+  /** true dla encji rysowanych jako postać (nie jako ikona/pocisk). */
+  isCharacter: boolean;
   kind: number;
 }
 
@@ -86,8 +93,18 @@ export class Renderer {
 
   private numberStyle!: TextStyle;
   private critStyle!: TextStyle;
+  private hitFlashDuration = 0.08;
 
-  async init(host: HTMLElement, feel: { shakeDecay: number; shakeMaxAmplitudePx: number; cameraKickReturn: number }): Promise<void> {
+  async init(
+    host: HTMLElement,
+    feel: {
+      shakeDecay: number;
+      shakeMaxAmplitudePx: number;
+      cameraKickReturn: number;
+      hitFlashDuration: number;
+    },
+  ): Promise<void> {
+    this.hitFlashDuration = feel.hitFlashDuration;
     this.app = new Application();
     await this.app.init({
       background: COLORS.ground,
@@ -253,20 +270,28 @@ export class Renderer {
       view.root.y = isoY(x, y);
       view.root.zIndex = depth(x, y);
 
-      // Hit flash — biały, addytywny, 0.08 s (GDD §5.6).
-      const flash = s.hitFlash[i]!;
-      view.body.tint = flash > 0 ? 0xffffff : view.baseTint;
-      view.body.alpha = flash > 0 ? 1 : 1;
+      // Hit flash — biały, addytywny, 0.08 s (GDD §5.6). Przy kolorowych
+      // sylwetkach nie da się go zrobić tintem, więc nakładamy białą kopię.
+      const flashT = s.hitFlash[i]!;
+      if (view.isCharacter) {
+        if (view.flash) view.flash.alpha = Math.min(1, flashT / this.hitFlashDuration) * 0.85;
+      } else {
+        view.body.tint = flashT > 0 ? 0xffffff : view.baseTint;
+      }
 
-      if (view.facing) view.facing.rotation = 0;
+      // Kierunek: znacznik na podłożu + odbicie sylwetki w poziomie.
+      const f = s.facing[i]!;
+      const dirSx = isoX(Math.cos(f), Math.sin(f));
+      const dirSy = isoY(Math.cos(f), Math.sin(f));
       if (view.facing) {
-        const f = s.facing[i]!;
-        view.facing.x = Math.cos(f) * ISO_W * 0.9 - Math.sin(f) * ISO_W * 0.9;
-        view.facing.y = (Math.cos(f) + Math.sin(f)) * ISO_H * 0.9;
-        view.facing.rotation = Math.atan2(
-          (Math.cos(f) + Math.sin(f)) * ISO_H,
-          (Math.cos(f) - Math.sin(f)) * ISO_W,
-        );
+        view.facing.x = dirSx * 0.45;
+        view.facing.y = dirSy * 0.45;
+        view.facing.rotation = Math.atan2(dirSy, dirSx);
+      }
+      if (view.isCharacter) {
+        // Martwa strefa — przy ruchu „w głąb" ekranu sylwetka nie migocze.
+        if (dirSx < -6) view.bodyWrap.scale.x = -1;
+        else if (dirSx > 6) view.bodyWrap.scale.x = 1;
       }
 
       if (kind === Kind.Enemy) this.updateEnemyView(world, i, view, alpha);
@@ -303,54 +328,70 @@ export class Renderer {
 
     const s = world.store;
     const root = new Container();
+    const bodyWrap = new Container();
     let body: Graphics;
+    let flash: Graphics | null = null;
     let shadow: Graphics;
     let facing: Graphics | null = null;
     let hpBg: Sprite | null = null;
     let hpFill: Sprite | null = null;
     let outline: Graphics | null = null;
     let baseTint = 0xffffff;
+    let isCharacter = false;
 
-    if (kind === Kind.Player) {
-      shadow = makeShadow(s.radius[id]!);
-      body = makeBody("player", s.radius[id]!);
-      facing = makeFacingMarker(s.radius[id]!);
-      baseTint = COLORS.player;
-      root.addChild(shadow, facing, body);
-    } else if (kind === Kind.Enemy) {
-      const def = world.enemyDefs[s.defIdx[id]!];
-      const arch: Archetype = archetypeOf(def?.archetype ?? "swarmer");
-      shadow = makeShadow(s.radius[id]!);
-      body = makeBody(arch, s.radius[id]!);
-      facing = makeFacingMarker(s.radius[id]!);
-      baseTint = def?.color ?? 0xcccccc;
+    if (kind === Kind.Player || kind === Kind.Enemy) {
+      isCharacter = true;
+      const radius = s.radius[id]!;
+      const charId = kind === Kind.Player ? "player" : (world.enemyDefs[s.defIdx[id]!]?.id ?? "");
+      baseTint =
+        kind === Kind.Player ? COLORS.player : (world.enemyDefs[s.defIdx[id]!]?.color ?? 0xcccccc);
 
-      hpBg = new Sprite(Texture.WHITE);
-      hpBg.tint = 0x000000;
-      hpBg.alpha = 0.6;
-      const barW = Math.max(26, s.radius[id]! * ISO_W * 2.4);
-      hpBg.width = barW;
-      hpBg.height = 5;
-      hpBg.anchor.set(0.5, 1);
-      hpBg.y = -s.radius[id]! * ISO_W * 2.9 - 10;
+      shadow = makeShadow(radius);
+      facing = makeFacingMarker(radius);
 
-      hpFill = new Sprite(Texture.WHITE);
-      hpFill.tint = 0xe0433d;
-      hpFill.width = barW - 2;
-      hpFill.height = 3;
-      hpFill.anchor.set(0, 1);
-      hpFill.x = -(barW - 2) / 2;
-      hpFill.y = hpBg.y - 1;
+      body = new Graphics();
+      drawCharacter(body, charId, radius, baseTint);
 
-      root.addChild(shadow, facing, body, hpBg, hpFill);
+      flash = new Graphics();
+      drawCharacter(flash, charId, radius, baseTint, 0xffffff);
+      flash.blendMode = "add";
+      flash.alpha = 0;
 
-      if (s.hasFlag(id, Flag.Elite) || s.hasFlag(id, Flag.Boss)) {
-        outline = new Graphics();
-        const r = s.radius[id]! * ISO_W * 1.25;
-        outline
-          .ellipse(0, 0, r, r * (ISO_H / ISO_W))
-          .stroke({ width: 3, color: s.hasFlag(id, Flag.Boss) ? 0xff3b30 : 0xffc83d, alpha: 0.95 });
-        root.addChildAt(outline, 1);
+      bodyWrap.addChild(body, flash);
+      root.addChild(shadow, facing, bodyWrap);
+
+      if (kind === Kind.Enemy) {
+        const top = -characterHeight(radius);
+        hpBg = new Sprite(Texture.WHITE);
+        hpBg.tint = 0x000000;
+        hpBg.alpha = 0.6;
+        const barW = Math.max(28, radius * ISO_W * 2.4);
+        hpBg.width = barW;
+        hpBg.height = 5;
+        hpBg.anchor.set(0.5, 1);
+        hpBg.y = top - 12;
+
+        hpFill = new Sprite(Texture.WHITE);
+        hpFill.tint = 0xe0433d;
+        hpFill.width = barW - 2;
+        hpFill.height = 3;
+        hpFill.anchor.set(0, 1);
+        hpFill.x = -(barW - 2) / 2;
+        hpFill.y = hpBg.y - 1;
+        root.addChild(hpBg, hpFill);
+
+        if (s.hasFlag(id, Flag.Elite) || s.hasFlag(id, Flag.Boss)) {
+          outline = new Graphics();
+          const r = radius * ISO_W * 1.3;
+          outline
+            .ellipse(0, 0, r, r * (ISO_H / ISO_W))
+            .stroke({
+              width: 3,
+              color: s.hasFlag(id, Flag.Boss) ? 0xff3b30 : 0xffc83d,
+              alpha: 0.95,
+            });
+          root.addChildAt(outline, 1);
+        }
       }
     } else if (kind === Kind.Projectile) {
       shadow = makeShadow(s.radius[id]! * 0.6);
@@ -392,15 +433,34 @@ export class Renderer {
       root.addChild(body);
     } else if (kind === Kind.Decoy) {
       shadow = makeShadow(0.4);
-      body = makeBody("player", 0.42);
+      body = new Graphics();
+      drawCharacter(body, "player", 0.42, COLORS.decoy, COLORS.decoy);
       baseTint = COLORS.decoy;
-      root.addChild(shadow, body);
+      bodyWrap.addChild(body);
+      root.addChild(shadow, bodyWrap);
     } else {
       return null;
     }
 
-    body.tint = baseTint;
-    const view: EntityView = { root, body, shadow, facing, hpBg, hpFill, outline, baseTint, kind };
+    if (!isCharacter && bodyWrap.children.length === 0) {
+      // Ikony (łup, pociski, kałuże) barwimy tintem — nie mają własnej palety.
+      body.tint = baseTint;
+    }
+
+    const view: EntityView = {
+      root,
+      bodyWrap,
+      body,
+      flash,
+      shadow,
+      facing,
+      hpBg,
+      hpFill,
+      outline,
+      baseTint,
+      isCharacter,
+      kind,
+    };
     this.entityLayer.addChild(root);
     this.views.set(id, view);
     return view;
@@ -416,7 +476,7 @@ export class Renderer {
       view.hpBg.visible = view.hpFill.visible;
     }
     // Stagger czytelny bez patrzenia na paski: przechylenie sylwetki.
-    view.body.rotation = s.state[id] === EState.Staggered ? 0.22 : 0;
+    view.bodyWrap.rotation = s.state[id] === EState.Staggered ? 0.22 : 0;
     view.root.alpha = s.breakWindow[id]! > 0 ? 0.75 + Math.sin(world.elapsed * 18) * 0.2 : 1;
   }
 
@@ -425,21 +485,22 @@ export class Renderer {
     const p = world.player;
     const state = s.state[p]!;
     // I-frames widoczne wprost — gracz musi wiedzieć, dlaczego nie oberwał.
-    if (world.playerInvulnerable) {
-      view.body.alpha = 0.45;
-      view.body.tint = 0xffffff;
-    } else {
-      view.body.alpha = 1;
-      view.body.tint = s.hitFlash[p]! > 0 ? 0xffffff : view.baseTint;
-    }
+    view.bodyWrap.alpha = world.playerInvulnerable ? 0.45 : 1;
+
     view.root.visible = state !== PState.Dead || (world.elapsed * 6) % 2 < 1;
-    view.body.rotation = state === PState.Dead ? 1.2 : state === PState.Hurt ? 0.18 : 0;
+    view.bodyWrap.rotation = state === PState.Dead ? 1.2 : state === PState.Hurt ? 0.18 : 0;
+
+    // Ładowanie ciężkiego: postać „nabiera" rozmiaru i rozświetla się,
+    // pełne naładowanie sygnalizuje jasny błysk.
+    const mirror = view.bodyWrap.scale.x < 0 ? -1 : 1;
     if (state === PState.HeavyCharge) {
       const t = world.heavyChargeRatio;
-      view.body.scale.set(1 + t * 0.12);
-      view.body.tint = t >= 1 ? 0xffe066 : view.baseTint;
+      view.bodyWrap.scale.set(1 + t * 0.12);
+      view.bodyWrap.scale.x = (1 + t * 0.12) * mirror;
+      if (view.flash) view.flash.alpha = Math.max(view.flash.alpha, t * 0.55);
     } else {
-      view.body.scale.set(1);
+      view.bodyWrap.scale.set(1);
+      view.bodyWrap.scale.x = mirror;
     }
   }
 
@@ -576,16 +637,19 @@ export class Renderer {
     slot.life = slot.maxLife;
     slot.scale = crit ? 1.4 : 1;
 
-    slot.text.text = Math.max(1, Math.round(value)).toString();
+    const amount = Math.max(1, Math.round(value));
+    slot.text.text = element === "heal" ? `+${amount}` : amount.toString();
     slot.text.style = crit ? this.critStyle : this.numberStyle;
     slot.text.tint =
-      element === "blocked"
-        ? 0x8b93a3
-        : element === "fire"
-          ? 0xff8a3d
-          : crit
-            ? 0xffe066
-            : 0xffffff;
+      element === "heal"
+        ? 0x5ce08a
+        : element === "blocked"
+          ? 0x8b93a3
+          : element === "fire"
+            ? 0xff8a3d
+            : crit
+              ? 0xffe066
+              : 0xffffff;
     slot.text.visible = true;
     slot.text.scale.set(slot.scale);
   }
