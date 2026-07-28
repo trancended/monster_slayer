@@ -15,26 +15,28 @@ test("zrzut z walki", async ({ page }) => {
   let a = 0;
   let i = 0;
   while (Date.now() < deadline) {
-    // Bez uników bot ginie — co samo w sobie jest dobrym sygnałem o trudności.
-    if (++i % 4 === 0) {
-      await page.keyboard.down("KeyW");
-      await page.keyboard.press("Space");
-      await page.waitForTimeout(120);
-      await page.keyboard.up("KeyW");
-      await page.keyboard.press("Digit1");
-    }
+    if (++i % 6 === 0) await page.keyboard.press("Space");
     a += 0.5;
-    await page.mouse.move(cx + Math.cos(a) * 200, cy + Math.sin(a) * 120);
+    await page.mouse.move(cx + Math.cos(a) * 180, cy + Math.sin(a) * 110);
     await page.mouse.down();
-    await page.waitForTimeout(80);
+    await page.waitForTimeout(60);
     await page.mouse.up();
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(70);
   }
+
+  if (process.env.SHOT_OVERHEAL === "true") {
+    // Wymuszamy nadwyżkę HP, żeby zobaczyć złoty segment paska.
+    await page.evaluate(`(() => {
+      const w = window.__ms.world, s = w.store, p = w.player;
+      s.hp[p] = s.maxHp[p] * 1.75;
+    })()`);
+    await page.waitForTimeout(300);
+  }
+
   await page.screenshot({ path: "tests/artifacts/combat.png" });
-  // Zbliżenie na okolicę gracza — do oceny czytelności sylwetek.
   await page.screenshot({
     path: "tests/artifacts/combat-zoom.png",
-    clip: { x: cx - 260, y: cy - 200, width: 520, height: 300 },
+    clip: { x: 0, y: cy + 120, width: 560, height: 260 },
     scale: "css",
   });
 });

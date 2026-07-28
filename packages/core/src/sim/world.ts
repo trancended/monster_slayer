@@ -166,13 +166,26 @@ export class World {
     this.poise = this.derived.maxPoise;
   }
 
+  /**
+   * Górny pułap HP z uwzględnieniem overhealu z zabójstw.
+   * `overhealCap` = 1 znosi overheal, 0 oznacza brak limitu.
+   */
+  get overhealLimit(): number {
+    const cap = this.balance.combat.player.overhealCap;
+    const max = this.store.maxHp[this.player];
+    if (cap <= 0) return Number.POSITIVE_INFINITY;
+    return max * Math.max(1, cap);
+  }
+
   refreshDerived(): void {
     const before = this.derived.maxHp;
     this.derived = deriveStats(this.character, this.balance);
     const s = this.store;
     s.maxHp[this.player] = this.derived.maxHp;
     if (this.derived.maxHp > before) s.hp[this.player] += this.derived.maxHp - before;
-    s.hp[this.player] = Math.min(s.hp[this.player], this.derived.maxHp);
+    // Przycinamy do pułapu overhealu, a nie do max HP — inaczej awans na poziom
+    // albo zmiana ekwipunku kasowałaby nadwyżkę zebraną zabójstwami.
+    s.hp[this.player] = Math.min(s.hp[this.player], this.overhealLimit);
     this.stamina = Math.min(this.stamina, this.derived.maxStamina);
   }
 
@@ -296,7 +309,8 @@ export class World {
 
     // — pasywna regeneracja HP. Świadome odstępstwo od GDD §5.1 („brak
     //   regeneracji, tylko mikstury / lifesteal") na życzenie projektowe.
-    //   Wyłącza się ustawieniem `player.hpRegen` na 0 w data/combat.json.
+    //   Kończy się na max HP — nadwyżkę ponad limit daje wyłącznie leczenie
+    //   za zabójstwo. Wyłącza się `player.hpRegen = 0` w data/combat.json.
     if (c.player.hpRegen > 0 && s.hp[p] < s.maxHp[p]) {
       s.hp[p] = Math.min(s.maxHp[p], s.hp[p] + c.player.hpRegen * dt);
     }
@@ -896,12 +910,13 @@ export class World {
     this.releaseToken(e);
 
     // — leczenie za zabójstwo: ułamek maksymalnego HP celu, czyli twardsi
-    //   wrogowie realnie się opłacają. Sterowane `player.killHealPct`.
+    //   wrogowie realnie się opłacają. Jako jedyne źródło leczenia wychodzi
+    //   ponad limit HP (overheal) — regeneracja i mikstury kończą się na max.
     const killHealPct = this.balance.combat.player.killHealPct;
     if (killHealPct > 0 && s.state[this.player] !== PState.Dead) {
       const p = this.player;
       const before = s.hp[p];
-      s.hp[p] = Math.min(s.maxHp[p], before + s.maxHp[e] * killHealPct);
+      s.hp[p] = Math.min(this.overhealLimit, before + s.maxHp[e] * killHealPct);
       const healed = s.hp[p] - before;
       if (healed >= 1) this.bus.emit("player:healed", { amount: healed, hp: s.hp[p] });
     }
@@ -984,7 +999,12 @@ export class World {
 
     if (leveled) {
       this.refreshDerived();
-      this.store.hp[this.player] = this.store.maxHp[this.player];
+      // Awans dobija do pełna, ale nie zdejmuje nadwyżki z overhealu —
+      // inaczej zabicie grubego wroga na progu poziomu kasowałoby własną nagrodę.
+      this.store.hp[this.player] = Math.max(
+        this.store.hp[this.player],
+        this.store.maxHp[this.player],
+      );
       this.store.level[this.player] = Math.min(255, ch.level);
     }
     this.bus.emit("xp:gained", {

@@ -27,7 +27,8 @@
       "healPct": 0.45,
       "healDuration": 1.5
     },
-    "respawnInvulnerable": 2.5
+    "respawnInvulnerable": 2.5,
+    "overhealCap": 3
   },
   "combo": [
     {

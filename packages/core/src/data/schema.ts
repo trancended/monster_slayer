@@ -40,6 +40,12 @@ export const CombatSchema = z.object({
     hpRegen: z.number(),
     /** Ułamek max HP zabitego wroga zwracany graczowi jako leczenie. 0 wyłącza. */
     killHealPct: z.number(),
+    /**
+     * Sufit leczenia za zabójstwo jako mnożnik max HP — jedyne źródło, które
+     * wychodzi ponad limit. 1 = brak overhealu, 0 = bez limitu.
+     * Regeneracja, mikstury i kradzież życia nadal kończą się na max HP.
+     */
+    overhealCap: z.number(),
     maxStamina: z.number(),
     staminaRegen: z.number(),
     staminaRegenDelay: z.number(),

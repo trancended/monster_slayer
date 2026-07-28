@@ -21,7 +21,11 @@
   const staminaVisible = $derived(
     staminaFullSince === 0 || now - staminaFullSince < 3000,
   );
-  const hpPct = $derived((hud.hp / Math.max(1, hud.maxHp)) * 100);
+  // HP ponad limit (overheal z zabójstw) rysujemy jako osobny, złoty segment
+  // nad paskiem — inaczej pasek rozjeżdżałby się poza swoją ramkę.
+  const hpPct = $derived(Math.min(100, (hud.hp / Math.max(1, hud.maxHp)) * 100));
+  const overheal = $derived(Math.max(0, hud.hp - hud.maxHp));
+  const overhealPct = $derived(Math.min(100, (overheal / Math.max(1, hud.maxHp)) * 100));
   const stamPct = $derived((hud.stamina / Math.max(1, hud.maxStamina)) * 100);
   const xpPct = $derived((hud.xp / Math.max(1, hud.xpToNext)) * 100);
   const lowHp = $derived(hud.hp > 0 && hpPct < 30);
@@ -67,11 +71,17 @@
       aria-label="Zdrowie"
       aria-valuenow={Math.round(hud.hp)}
       aria-valuemin="0"
-      aria-valuemax={Math.round(hud.maxHp)}
+      aria-valuemax={Math.round(Math.max(hud.maxHp, hud.hp))}
     >
       <i style="width:{hpPct}%"></i>
+      {#if overheal > 0}
+        <b class="over" style="width:{overhealPct}%"></b>
+      {/if}
     </div>
-    <div class="hpnum mono">{Math.ceil(hud.hp)} / {Math.round(hud.maxHp)}</div>
+    <div class="hpnum mono" class:overhealed={overheal > 0}>
+      {Math.ceil(hud.hp)} / {Math.round(hud.maxHp)}
+      {#if overheal >= 1}<span class="bonus">+{Math.floor(overheal)}</span>{/if}
+    </div>
   </div>
 
   <div
@@ -225,14 +235,37 @@
   .hp > i {
     background: linear-gradient(180deg, #ff5c55, var(--hp-dark));
   }
+  .hp > .over {
+    position: absolute;
+    /* Kotwica po prawej: nadwyżka czyta się jako dokładka na pełnym pasku,
+       a nie jako ubytek zdrowia. Ubywa od lewej krawędzi bloku. */
+    inset: 0 0 0 auto;
+    display: block;
+    background: repeating-linear-gradient(
+      135deg,
+      #ffd166 0 6px,
+      #e0a32e 6px 12px
+    );
+    box-shadow: 0 0 8px rgba(255, 209, 102, 0.6);
+  }
   .hpnum {
     position: absolute;
     inset: 0;
     display: grid;
+    grid-auto-flow: column;
+    gap: 0.5em;
+    place-content: center;
     place-items: center;
     font-size: 0.72em;
     text-shadow: 0 1px 3px #000;
     letter-spacing: 0.04em;
+  }
+  .hpnum.overhealed {
+    font-weight: 700;
+  }
+  .hpnum .bonus {
+    color: #ffd166;
+    text-shadow: 0 1px 3px #000, 0 0 6px rgba(0, 0, 0, 0.9);
   }
   .stam {
     height: 7px;

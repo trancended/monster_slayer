@@ -120,7 +120,7 @@ wymaga dotykania kodu.
 |---|---|---|---|
 | Bazowe HP gracza | 100 (§5.1) | **300** | `player.maxHp` |
 | Regeneracja HP | brak, tylko mikstury i lifesteal (§5.1) | **1 HP/s** | `player.hpRegen` |
-| Leczenie za zabójstwo | brak | **10% max HP celu** | `player.killHealPct` |
+| Leczenie za zabójstwo | brak | **10% max HP celu, ponad limit** | `player.killHealPct`, `player.overhealCap` |
 | Czasy combo | 0.42 / 0.38 / 0.68 s (§5.2) | **0.30 / 0.27 / 0.46 s** | `combo[].duration` |
 | Okno anulowania | 40 / 45 / 60% (§5.2) | **55 / 55 / 60%** | `combo[].cancelAt` |
 | Atak ciężki | ładowanie 0.9 s, animacja 1.10 s | **0.7 s / 0.85 s** | `heavy.*` |
@@ -134,6 +134,18 @@ następnego ciosu, zamiast czekać na koniec animacji. To jest różnica między
 **Leczenie za zabójstwo** skaluje się z twardością celu, więc mini-boss (1800 HP
 bazowo) oddaje znacznie więcej niż goblin. Zwrot pokazuje się jako zielona
 liczba nad postacią.
+
+**Tylko zabójstwa dają overheal.** Dwa źródła leczenia mają celowo różne reguły:
+
+| Źródło | Sufit |
+|---|---|
+| Zabicie wroga (`killHealPct`) | **ponad max HP**, do `overhealCap` × max HP (domyślnie **3×**) |
+| Pasywna regeneracja (`hpRegen`) | dokładnie max HP |
+| Mikstury, kradzież życia | dokładnie max HP |
+
+`overhealCap = 1` znosi overheal, `0` zdejmuje limit całkowicie. Nadwyżka jest
+w HUD złotym, kreskowanym segmentem po prawej stronie paska plus licznikiem
+`+N`; awans na poziom dobija do pełna, ale **nie** zdejmuje nadwyżki.
 
 **Śmierć nie resetuje areny.** Encounter, wrogowie i ich nadgryzione HP zostają;
 znikają tylko pociski i kałuże z poprzedniego życia, żeby gracz nie ginął od
