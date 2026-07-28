@@ -1,0 +1,9 @@
+node_modules
+packages/*/node_modules
+packages/*/dist
+server/_build
+server/deps
+.git
+*.md
+!data/*.json
+.DS_Store

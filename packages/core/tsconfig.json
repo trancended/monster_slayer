@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": [],
+    // Struktura SoA opiera się na TypedArray, gdzie indeksowanie w zakresie
+    // nigdy nie zwraca undefined. Z włączoną flagą każdy odczyt hot-path
+    // wymagałby `!`, co jest gorsze niż jej brak. Klient trzyma flagę włączoną.
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["src/**/*.ts"]
+}

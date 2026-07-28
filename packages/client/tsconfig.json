@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vite/client", "svelte", "node"],
+    // Klient kompiluje się razem ze źródłami `@ms/core` (alias na źródła, nie
+    // na zbudowany pakiet), a rdzeń stoi na TypedArray, gdzie indeksowanie
+    // w zakresie nigdy nie zwraca undefined. Flaga musi być spójna w obrębie
+    // jednej jednostki kompilacji — patrz komentarz w packages/core/tsconfig.json.
+    "noUncheckedIndexedAccess": false,
+    "paths": {
+      "@ms/core": ["../core/src/index.ts"],
+      "@ms/core/*": ["../core/src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts"]
+}

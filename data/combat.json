@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "player": {
+    "maxHp": 100,
+    "maxStamina": 100,
+    "staminaRegen": 22,
+    "staminaRegenDelay": 0.6,
+    "maxPoise": 30,
+    "poiseRegen": 5,
+    "moveSpeed": 4.6,
+    "sprintMultiplier": 1.55,
+    "sprintStaminaPerSec": 12,
+    "radius": 0.42,
+    "mass": 1.0,
+    "baseArmor": 0,
+    "baseCritChance": 0.05,
+    "critChanceCap": 0.6,
+    "baseCritMult": 1.5,
+    "weapon": { "min": 9, "max": 14 },
+    "potions": { "slots": 3, "healPct": 0.45, "healDuration": 1.5 }
+  },
+  "combo": [
+    {
+      "id": 1,
+      "damageMult": 1.0,
+      "duration": 0.42,
+      "cancelAt": 0.4,
+      "hitAt": 0.42,
+      "poiseDamage": 12,
+      "range": 2.1,
+      "arcDeg": 100,
+      "knockback": 0.15,
+      "staminaCost": 0,
+      "advance": 0.55
+    },
+    {
+      "id": 2,
+      "damageMult": 1.15,
+      "duration": 0.38,
+      "cancelAt": 0.45,
+      "hitAt": 0.4,
+      "poiseDamage": 14,
+      "range": 2.1,
+      "arcDeg": 110,
+      "knockback": 0.2,
+      "staminaCost": 0,
+      "advance": 0.6
+    },
+    {
+      "id": 3,
+      "damageMult": 1.65,
+      "duration": 0.68,
+      "cancelAt": 0.6,
+      "hitAt": 0.38,
+      "poiseDamage": 40,
+      "range": 2.5,
+      "arcDeg": 220,
+      "knockback": 0.9,
+      "staminaCost": 0,
+      "advance": 0.9
+    }
+  ],
+  "heavy": {
+    "chargeTime": 0.9,
+    "damageMult": 2.6,
+    "duration": 1.1,
+    "cancelAt": 0.3,
+    "hitAt": 0.34,
+    "poiseDamage": 200,
+    "range": 2.8,
+    "arcDeg": 140,
+    "knockback": 1.2,
+    "staminaCost": 20,
+    "advance": 1.1,
+    "guaranteedStagger": true
+  },
+  "comboWindow": 0.45,
+  "dodge": {
+    "duration": 0.6,
+    "distance": 3.2,
+    "iFrameStart": 0.1,
+    "iFrameEnd": 0.42,
+    "recovery": 0.18,
+    "cooldown": 0.25,
+    "staminaCost": 25
+  },
+  "stagger": {
+    "duration": 0.7,
+    "overflow": 0.2
+  },
+  "armor": {
+    "base": 60,
+    "perAttackerLevel": 12,
+    "cap": 0.75
+  },
+  "damageVariance": { "min": 0.95, "max": 1.05 },
+  "inputBufferSeconds": 0.15,
+  "gameFeel": {
+    "hitstopNormal": 0.055,
+    "hitstopHeavy": 0.11,
+    "hitstopKill": 0.16,
+    "killSlowMoScale": 0.35,
+    "killSlowMoDuration": 0.2,
+    "hitFlashDuration": 0.08,
+    "shakeDecay": 1.8,
+    "shakeTraumaHit": 0.18,
+    "shakeTraumaHeavy": 0.36,
+    "shakeTraumaHurt": 0.42,
+    "shakeMaxAmplitudePx": 26,
+    "cameraKickPx": 4,
+    "cameraKickReturn": 0.12
+  },
+  "difficulty": {
+    "story": { "label": "Opowieść", "incomingDamage": 0.6, "aiAggression": 0.75 },
+    "hunter": { "label": "Łowca", "incomingDamage": 1.0, "aiAggression": 1.0 },
+    "veteran": { "label": "Weteran", "incomingDamage": 1.35, "aiAggression": 1.15 },
+    "nightmare": { "label": "Koszmar", "incomingDamage": 1.8, "aiAggression": 1.35 }
+  },
+  "limits": {
+    "maxEnemies": 24,
+    "maxProjectiles": 120,
+    "attackTokens": 2
+  }
+}

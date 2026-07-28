@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "xpCurve": { "base": 100, "exponent": 1.35 },
+  "maxLevel": 40,
+  "perLevel": {
+    "attributePoints": 3,
+    "skillPoints": 1,
+    "skillPointsHalvedAfterLevel": 20,
+    "maxHp": 4,
+    "baseDamagePct": 0.015
+  },
+  "attributes": {
+    "strength": {
+      "label": "Siła",
+      "physDamagePctPerPoint": 0.0083,
+      "poisePerPoint": 2
+    },
+    "dexterity": {
+      "label": "Zręczność",
+      "attackSpeedPctPerPoint": 0.006,
+      "critChancePerPoint": 0.0015,
+      "moveSpeedPctPerPoint": 0.003,
+      "moveSpeedCap": 0.25
+    },
+    "vitality": {
+      "label": "Wytrzymałość",
+      "maxHpPerPoint": 9,
+      "maxStaminaPerPoint": 3,
+      "armorPerPoint": 1.2
+    },
+    "will": {
+      "label": "Wola",
+      "elementalDamagePctPerPoint": 0.012,
+      "potionEffectPctPerPoint": 0.02,
+      "cooldownReductionPerPoint": 0.004,
+      "cooldownReductionCap": 0.4
+    }
+  },
+  "death": { "goldLossPct": 0.1 },
+  "zoneScaling": {
+    "hpPerLevel": 0.19,
+    "damagePerLevel": 0.13,
+    "xpPerLevel": 0.22
+  }
+}

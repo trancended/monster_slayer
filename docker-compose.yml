@@ -1,0 +1,63 @@
+services:
+  # ── Gra: Vite dev server z HMR. Domyślny profil — `docker compose up`.
+  client:
+    build:
+      context: .
+      target: dev
+    container_name: monster-slayer-client
+    ports:
+      - "5173:5173"
+    volumes:
+      # Źródła z hosta → HMR działa bez przebudowy obrazu.
+      - ./packages:/app/packages
+      - ./data:/app/data
+      # Anonimowe wolumeny chronią node_modules z obrazu przed nadpisaniem
+      # przez katalogi hosta (inaczej znikną binaria esbuild/rollup).
+      - /app/node_modules
+      - /app/packages/client/node_modules
+      - /app/packages/core/node_modules
+      - /app/packages/sim/node_modules
+    environment:
+      VITE_USE_POLLING: "true"
+      VITE_BACKEND_URL: "http://server:4000"
+      VITE_BACKEND_WS: "ws://server:4000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  # ── Build produkcyjny za nginx: `docker compose --profile prod up`
+  web:
+    build:
+      context: .
+      target: prod
+    container_name: monster-slayer-web
+    profiles: ["prod"]
+    ports:
+      - "8080:80"
+
+  # ── Baza dla backendu Phoenix (M3). Profil `backend`, żeby nie startowała
+  #    przy samej grze — klient jest offline-first i jej nie potrzebuje.
+  db:
+    image: postgres:17-alpine
+    container_name: monster-slayer-db
+    profiles: ["backend"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: monster_slayer_dev
+    ports:
+      # 5433 na hoście, żeby nie kolidować z lokalną instancją Postgresa
+      - "5433:5432"
+    volumes:
+      - monster_slayer_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d monster_slayer_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  monster_slayer_pgdata:

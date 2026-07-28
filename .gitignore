@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vite/
+packages/*/node_modules/
+packages/*/dist/
+server/_build/
+server/deps/
+server/.elixir_ls/
+out/
+test-results/
+playwright-report/
+tests/artifacts/
