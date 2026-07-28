@@ -1,65 +1,55 @@
-/** Diagnostyka: ekwipunek otwierany w trakcie walki, z trzymanym przyciskiem. */
+/** Diagnostyka: czy panel ekwipunku przeżywa niskie/wąskie okno i skalę UI. */
 import { test } from "@playwright/test";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 
-const PROBE = `(() => {
-  const g = window.__ms, w = g.world, s = w.store, p = w.player;
-  const panel = document.querySelector('.scrim .panel');
-  return {
-    screen: document.querySelector('.scrim h1')?.textContent ?? 'gra',
-    panelBox: panel ? (() => { const b = panel.getBoundingClientRect();
-      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; })() : null,
-    paused: g.loop.isPaused,
-    playerState: s.state[p],
-    intentAttackHeld: w.intent.attackHeld,
-    intentMoveX: +w.intent.moveX.toFixed(2),
-    elapsed: +w.elapsed.toFixed(2),
-  };
-})()`;
+const CASES = [
+  { w: 1440, h: 789, scale: 1, opis: "MacBook Air, okno pełne" },
+  { w: 1440, h: 620, scale: 1, opis: "niskie okno" },
+  { w: 1280, h: 500, scale: 1, opis: "bardzo niskie okno" },
+  { w: 1024, h: 640, scale: 1, opis: "wąskie okno" },
+  { w: 1440, h: 700, scale: 1.5, opis: "skala UI 150%" },
+  { w: 900, h: 560, scale: 1.25, opis: "małe okno + skala 125%" },
+];
 
-test("ekwipunek otwierany w trakcie ataku", async ({ page }) => {
-  page.on("pageerror", (e) => console.log("[pageerror]", e.message, "\n", e.stack));
+test("panel ekwipunku w różnych oknach", async ({ page }) => {
+  page.on("pageerror", (e) => console.log("[pageerror]", e.message));
 
-  await page.goto(BASE, { waitUntil: "networkidle" });
-  await page.getByRole("button", { name: "Graj" }).click();
-  await page.waitForTimeout(800);
+  for (const c of CASES) {
+    await page.setViewportSize({ width: c.w, height: c.h });
+    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.getByRole("button", { name: "Graj" }).click();
+    await page.waitForTimeout(400);
 
-  await page.evaluate(`(() => {
-    const w = window.__ms.world;
-    for (let i = 0; i < 6; i++) w.character.inventory.push(w.loot.generateItem(4));
-  })()`);
+    await page.evaluate(
+      `(() => {
+        const g = window.__ms, w = g.world;
+        for (let i = 0; i < 8; i++) w.character.inventory.push(w.loot.generateItem(5));
+        w.character.attributePoints = 5;
+        g.applySettings({ ...g.constructor && window.__ms.world ? window.__hudSettings ?? {} : {} });
+      })()`,
+    ).catch(() => {});
 
-  const probe = async (label: string) => {
-    console.log(`--- ${label}:`, JSON.stringify(await page.evaluate(PROBE)));
-  };
+    await page.evaluate(`document.documentElement.style.setProperty('--ui-scale', '${c.scale}')`);
+    await page.keyboard.press("KeyI");
+    await page.waitForTimeout(400);
 
-  // Symulujemy realną grę: ruch WASD + trzymany LPM, i w tym stanie „I".
-  await page.keyboard.down("KeyW");
-  await page.mouse.move(700, 400);
-  await page.mouse.down();
-  await page.waitForTimeout(400);
-  await probe("walka, LPM wciśnięty");
-
-  await page.keyboard.press("KeyI");
-  await page.waitForTimeout(400);
-  await probe("po I (LPM nadal wciśnięty, W nadal wciśnięte)");
-
-  // Klik w przycisk wewnątrz panelu przy trzymanym LPM z canvasu.
-  const equip = page.getByRole("button", { name: /^Załóż/ }).first();
-  console.log("--- Załóż widoczny:", await equip.isVisible().catch(() => false));
-  await equip.click({ force: true }).catch((e) => console.log("--- klik padł:", e.message));
-  await page.waitForTimeout(300);
-  await probe("po kliknięciu Załóż");
-
-  await page.mouse.up();
-  await page.keyboard.up("KeyW");
-
-  await page.keyboard.press("KeyI");
-  await page.waitForTimeout(400);
-  await probe("po zamknięciu");
-
-  await page.waitForTimeout(1500);
-  await probe("1.5 s później");
-  await page.screenshot({ path: "tests/artifacts/inventory.png" });
+    const r = await page.evaluate(`(() => {
+      const box = (s) => { const el = document.querySelector(s); if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width), h: Math.round(b.height) }; };
+      const panel = box('.scrim .panel');
+      const vis = panel ? (panel.w > 40 && panel.h > 40 && panel.y < window.innerHeight && panel.y + panel.h > 0) : false;
+      return {
+        scrim: box('.scrim'),
+        panel,
+        naEkranie: vis,
+        naglowekWidoczny: !!document.querySelector('.scrim header h1'),
+        atrybuty: document.querySelectorAll('.scrim .attr').length,
+        przedmioty: document.querySelectorAll('.scrim .item').length,
+        gridH: (() => { const g = document.querySelector('.scrim .grid'); return g ? Math.round(g.getBoundingClientRect().height) : null; })(),
+      };
+    })()`);
+    console.log(`--- ${c.opis} (${c.w}x${c.h}, skala ${c.scale}):`, JSON.stringify(r));
+  }
 });

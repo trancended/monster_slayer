@@ -15,6 +15,17 @@ export interface DropResult {
   potion: boolean;
 }
 
+/**
+ * Identyfikatory przedmiotów muszą być unikalne **między sesjami**, nie tylko
+ * w obrębie jednej. Sam licznik zeruje się przy każdym wczytaniu strony, więc
+ * pierwszy łup po `F5` dostawał `it_1` — dokładnie to samo id, co przedmiot już
+ * leżący w zapisie. Keyed each w Svelte wywala się na duplikacie klucza i gasi
+ * całe poddrzewo, przez co panel ekwipunku znikał bez śladu.
+ *
+ * Prefiks sesji jest poza deterministycznym RNG celowo: id służy wyłącznie do
+ * identyfikacji w UI i ekwipunku, nie wpływa na symulację ani na replay.
+ */
+const SESSION_PREFIX = Date.now().toString(36);
 let itemCounter = 0;
 
 export class LootGenerator {
@@ -150,7 +161,7 @@ export class LootGenerator {
     );
 
     return {
-      id: `it_${(++itemCounter).toString(36)}`,
+      id: `it_${SESSION_PREFIX}_${(++itemCounter).toString(36)}`,
       name,
       slot: slotDef.id,
       rarity: rarityId,

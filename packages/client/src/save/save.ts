@@ -6,7 +6,7 @@
 import { get, set, del } from "idb-keyval";
 import type { CharacterState } from "@ms/core";
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface GameSettings {
   difficulty: string;
@@ -70,11 +70,38 @@ export async function clearSave(slot = 1): Promise<void> {
 
 /** Migracje wersjonowane polem `save_version` — nowa wersja nigdy nie kasuje starego zapisu. */
 function migrate(raw: SaveData): SaveData {
-  let data = raw;
-  if (data.save_version < 1) {
-    data = { ...data, save_version: 1 };
+  const data = raw;
+  if (data.save_version < 2) {
+    // v1 nadawało przedmiotom id z licznika zerowanego przy każdym wczytaniu
+    // strony, więc zapisy z tamtej wersji mają duplikaty (`it_1` i w plecaku,
+    // i wśród nowego łupu). Keyed each w Svelte wywala się na takim duplikacie
+    // i gasi cały panel ekwipunku, dlatego przepisujemy kolizje na unikaty.
+    dedupeItemIds(data);
   }
+  data.save_version = SAVE_VERSION;
   data.settings = { ...DEFAULT_SETTINGS, ...data.settings };
   data.settings.audio = { ...DEFAULT_SETTINGS.audio, ...data.settings.audio };
   return data;
+}
+
+function dedupeItemIds(data: SaveData): void {
+  const ch = data.character as CharacterState | undefined;
+  if (!ch) return;
+  if (!Array.isArray(ch.inventory)) ch.inventory = [];
+  if (!ch.equipment || typeof ch.equipment !== "object") ch.equipment = {};
+
+  const seen = new Set<string>();
+  const prefix = `fix${Date.now().toString(36)}`;
+  let n = 0;
+
+  const fix = (item: { id?: string } | undefined | null): void => {
+    if (!item) return;
+    if (typeof item.id !== "string" || item.id === "" || seen.has(item.id)) {
+      item.id = `${prefix}_${(++n).toString(36)}`;
+    }
+    seen.add(item.id);
+  };
+
+  for (const item of Object.values(ch.equipment)) fix(item);
+  for (const item of ch.inventory) fix(item);
 }
