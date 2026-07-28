@@ -338,15 +338,26 @@ export class Game {
    */
   toggleInventory(): void {
     if (hud.screen === "inventory") {
-      hud.screen = "playing";
-      this.loop.setPaused(false);
+      this.closeInventory();
       return;
     }
     if (hud.screen === "playing" || hud.screen === "paused" || hud.screen === "options") {
       this.syncHud(true);
       hud.screen = "inventory";
       this.loop.setPaused(true);
+      // Input trzymany w chwili otwarcia nie może przeciekać do gry.
+      this.input.clearHeld();
+      this.world.intent.attackHeld = false;
+      this.world.intent.moveX = 0;
+      this.world.intent.moveY = 0;
     }
+  }
+
+  closeInventory(): void {
+    if (hud.screen !== "inventory") return;
+    hud.screen = "playing";
+    this.loop.setPaused(false);
+    this.input.clearHeld();
   }
 
   resume(): void {

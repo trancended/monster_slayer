@@ -160,6 +160,23 @@ export class InputManager {
     this.listeners.length = 0;
   }
 
+  /**
+   * Zrzuca cały przytrzymany input. Wołane przy wejściu i wyjściu z overlayów:
+   * bez tego klawisz albo przycisk myszy trzymany w chwili otwarcia ekwipunku
+   * „przecieka" do gry po jego zamknięciu — postać sama rusza albo ładuje cios.
+   */
+  clearHeld(): void {
+    this.down.clear();
+    this.mouseDown = false;
+    this.mousePressed = false;
+    this.rightPressed = false;
+    this.dodgePressed = false;
+    this.potionPressed = false;
+    this.keyAttackPressed = false;
+    this.keyHeavyPressed = false;
+    this.highlightLoot = false;
+  }
+
   private matches(action: Action, code: string): boolean {
     return this.bindings[action].includes(code);
   }

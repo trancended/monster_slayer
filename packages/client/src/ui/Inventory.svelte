@@ -32,15 +32,31 @@
   }
 </script>
 
-<div class="scrim">
-  <div class="panel interactive">
+<!--
+  Kliknięcie w tło zamyka panel. To najczęstsze odruchowe wyjście z overlaya —
+  bez tego gracz, który nie trafi w przycisk, ma wrażenie, że gra się zawiesiła.
+-->
+<div
+  class="scrim"
+  role="presentation"
+  onclick={(e) => {
+    if (e.target === e.currentTarget) game.closeInventory();
+  }}
+>
+  <div class="panel interactive" role="dialog" aria-modal="true" aria-label="Ekwipunek">
     <header>
       <h1>Ekwipunek</h1>
       <div class="mono muted">
         Poz. {hud.level} · {hud.gold} złota · {hud.inventory.length} przedmiotów
       </div>
-      <button class="ghost" onclick={() => game.toggleInventory()}>Zamknij (I)</button>
+      <button class="ghost close" onclick={() => game.closeInventory()}>
+        Zamknij <span class="mono">I</span> / <span class="mono">Esc</span>
+      </button>
     </header>
+    <p class="hint-close muted">
+      Gra jest wstrzymana. Wyjdziesz klawiszem <span class="mono">I</span>,
+      <span class="mono">Esc</span>, <span class="mono">Tab</span> albo klikając poza panelem.
+    </p>
 
     <div class="grid">
       <section class="attrs">
@@ -164,6 +180,21 @@
   }
   header button {
     margin-left: auto;
+  }
+  .close {
+    border-color: var(--accent);
+  }
+  .close .mono {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 0.05em 0.4em;
+  }
+  .hint-close {
+    margin: 10px 0 0;
+    font-size: 0.78em;
+  }
+  .hint-close .mono {
+    color: var(--accent);
   }
   .grid {
     display: grid;

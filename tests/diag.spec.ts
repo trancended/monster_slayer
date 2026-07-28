@@ -1,83 +1,65 @@
-/** Diagnostyka: czy po ekwipunku gracz nadal potrafi atakować. */
+/** Diagnostyka: ekwipunek otwierany w trakcie walki, z trzymanym przyciskiem. */
 import { test } from "@playwright/test";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:5173";
 
 const PROBE = `(() => {
-  const g = window.__ms;
-  const w = g.world, s = w.store, p = w.player;
-  let enemies = 0;
-  for (let i = 0; i < s.count; i++) if (s.alive[i] && s.kind[i] === 2) enemies++;
+  const g = window.__ms, w = g.world, s = w.store, p = w.player;
+  const panel = document.querySelector('.scrim .panel');
   return {
-    screen: document.querySelector('.scrim') ? 'overlay' : 'gra',
+    screen: document.querySelector('.scrim h1')?.textContent ?? 'gra',
+    panelBox: panel ? (() => { const b = panel.getBoundingClientRect();
+      return [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)]; })() : null,
     paused: g.loop.isPaused,
     playerState: s.state[p],
-    stateTime: +s.stateTime[p].toFixed(3),
-    stateDuration: +s.stateDuration[p].toFixed(3),
-    hp: Math.round(s.hp[p]),
-    stamina: Math.round(w.stamina),
-    attackSpeed: +w.derived.attackSpeed.toFixed(3),
-    weapon: [Math.round(w.derived.weaponMin), Math.round(w.derived.weaponMax)],
-    moveSpeed: +w.derived.moveSpeed.toFixed(2),
-    comboIndex: w.comboIndex,
-    buffered: w.bufferedAction,
-    enemies,
-    kills: w.character.totalKills,
-    elapsed: +w.elapsed.toFixed(1),
+    intentAttackHeld: w.intent.attackHeld,
+    intentMoveX: +w.intent.moveX.toFixed(2),
+    elapsed: +w.elapsed.toFixed(2),
   };
 })()`;
 
-test("diagnostyka ekwipunku", async ({ page }) => {
+test("ekwipunek otwierany w trakcie ataku", async ({ page }) => {
   page.on("pageerror", (e) => console.log("[pageerror]", e.message, "\n", e.stack));
 
   await page.goto(BASE, { waitUntil: "networkidle" });
   await page.getByRole("button", { name: "Graj" }).click();
+  await page.waitForTimeout(800);
 
-  const box = await page.locator("#stage canvas").boundingBox();
-  const cx = (box?.width ?? 1280) / 2;
-  const cy = (box?.height ?? 800) / 2;
-
-  const attack = async (seconds: number) => {
-    const until = Date.now() + seconds * 1000;
-    let a = 0;
-    let n = 0;
-    while (Date.now() < until) {
-      a += 0.5;
-      await page.mouse.move(cx + Math.cos(a) * 180, cy + Math.sin(a) * 110);
-      await page.mouse.down();
-      await page.waitForTimeout(60);
-      await page.mouse.up();
-      if (++n % 6 === 0) await page.keyboard.press("Space");
-      await page.waitForTimeout(70);
-    }
-  };
+  await page.evaluate(`(() => {
+    const w = window.__ms.world;
+    for (let i = 0; i < 6; i++) w.character.inventory.push(w.loot.generateItem(4));
+  })()`);
 
   const probe = async (label: string) => {
-    const v = await page.evaluate(PROBE);
-    console.log(`--- ${label}:`, JSON.stringify(v));
-    return v as Record<string, unknown>;
+    console.log(`--- ${label}:`, JSON.stringify(await page.evaluate(PROBE)));
   };
 
-  await attack(14);
-  await probe("po walce (przed ekwipunkiem)");
+  // Symulujemy realną grę: ruch WASD + trzymany LPM, i w tym stanie „I".
+  await page.keyboard.down("KeyW");
+  await page.mouse.move(700, 400);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  await probe("walka, LPM wciśnięty");
 
   await page.keyboard.press("KeyI");
   await page.waitForTimeout(400);
-  await probe("ekwipunek otwarty");
+  await probe("po I (LPM nadal wciśnięty, W nadal wciśnięte)");
 
+  // Klik w przycisk wewnątrz panelu przy trzymanym LPM z canvasu.
   const equip = page.getByRole("button", { name: /^Załóż/ }).first();
-  if (await equip.isVisible().catch(() => false)) {
-    await equip.click();
-    await page.waitForTimeout(300);
-    await probe("po założeniu przedmiotu");
-  } else {
-    console.log("--- brak przedmiotu do założenia");
-  }
+  console.log("--- Załóż widoczny:", await equip.isVisible().catch(() => false));
+  await equip.click({ force: true }).catch((e) => console.log("--- klik padł:", e.message));
+  await page.waitForTimeout(300);
+  await probe("po kliknięciu Załóż");
+
+  await page.mouse.up();
+  await page.keyboard.up("KeyW");
 
   await page.keyboard.press("KeyI");
   await page.waitForTimeout(400);
-  await probe("ekwipunek zamknięty");
+  await probe("po zamknięciu");
 
-  await attack(14);
-  await probe("po walce (po ekwipunku)");
+  await page.waitForTimeout(1500);
+  await probe("1.5 s później");
+  await page.screenshot({ path: "tests/artifacts/inventory.png" });
 });

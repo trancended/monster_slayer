@@ -49,6 +49,26 @@ test("ekwipunek otwiera się i zamyka, gra wraca do działania", async ({ page }
   await expect(heading).toBeHidden();
   await expect(page.getByRole("heading", { name: "Pauza" })).toBeHidden();
 
+  // Escape zamyka
+  await page.keyboard.press("KeyI");
+  await expect(heading).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(heading).toBeHidden();
+
+  // Kliknięcie w tło poza panelem zamyka — najczęstszy odruch gracza.
+  await page.keyboard.press("KeyI");
+  await expect(heading).toBeVisible();
+  await page.mouse.click(12, 12);
+  await expect(heading).toBeHidden();
+
+  // Kliknięcie WEWNĄTRZ panelu nie może go zamykać.
+  await page.keyboard.press("KeyI");
+  await expect(heading).toBeVisible();
+  await page.getByRole("heading", { name: "Ekwipunek" }).click();
+  await expect(heading).toBeVisible();
+  await page.keyboard.press("KeyI");
+  await expect(heading).toBeHidden();
+
   const real = errors.filter((e) => !/favicon|net::ERR|Failed to load resource|WebGPU/i.test(e));
   expect(real, `błędy:\n${real.join("\n")}`).toHaveLength(0);
 });
