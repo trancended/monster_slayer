@@ -56,6 +56,8 @@ export const CombatSchema = z.object({
     baseCritMult: z.number(),
     weapon: z.object({ min: z.number(), max: z.number() }),
     potions: z.object({ slots: z.number(), healPct: z.number(), healDuration: z.number() }),
+    /** Sekundy nietykalności po odrodzeniu — arena nie jest czyszczona po śmierci. */
+    respawnInvulnerable: z.number(),
   }),
   combo: z.array(ComboStepSchema).min(1),
   heavy: HeavySchema,

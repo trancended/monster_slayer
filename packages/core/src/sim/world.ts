@@ -83,6 +83,7 @@ export class World {
   private potionHealRemaining = 0;
   private potionHealRate = 0;
   private respawnTimer = 0;
+  private invulnTimer = 0;
   private cheatDeathCooldown = 0;
   private igniteTimers = new Float32Array(512);
 
@@ -279,11 +280,12 @@ export class World {
 
     if (s.state[p] === PState.Dead) {
       this.respawnTimer -= dt;
-      if (this.respawnTimer <= 0) this.respawn();
+      if (this.respawnTimer <= 0) this.respawnNow();
       return;
     }
 
     if (this.cheatDeathCooldown > 0) this.cheatDeathCooldown -= dt;
+    if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
     // — mikstura leczy w czasie, nie natychmiast (GDD §5.1)
     if (this.potionHealRemaining > 0) {
@@ -542,6 +544,20 @@ export class World {
       if (this.bufferedAction === Buffered.Dodge && this.tryDodge()) return;
     }
 
+    // Combo cancel: gdy cios już trafił, kolejne kliknięcie od razu przechodzi
+    // do następnego ciosu, zamiast czekać na koniec animacji. To jest różnica
+    // między „atak co animację" a „atak co klik".
+    if (
+      !isHeavy &&
+      s.hitDone[p] === 1 &&
+      progress >= step.cancelAt &&
+      this.bufferedAction === Buffered.Attack
+    ) {
+      this.comboIndex = (s.subStep[p] + 1) % c.combo.length;
+      this.comboTimer = c.comboWindow;
+      if (this.tryAttack()) return;
+    }
+
     if (s.stateTime[p] >= s.stateDuration[p]) {
       if (isHeavy) {
         this.comboIndex = 0;
@@ -683,6 +699,7 @@ export class World {
   get playerInvulnerable(): boolean {
     const s = this.store;
     const p = this.player;
+    if (this.invulnTimer > 0) return true;
     if (s.hasFlag(p, Flag.Invulnerable)) return true;
     if (s.state[p] !== PState.Dodge) return false;
     const c = this.balance.combat.dodge;
@@ -816,18 +833,30 @@ export class World {
     this.bus.emit("sfx", { name: "death" });
   }
 
-  private respawn(): void {
+  /**
+   * Odrodzenie bez resetu areny: encounter, wrogowie i ich stan HP zostają
+   * nietknięte — wraca tylko gracz. Postęp w walce nie przepada, więc śmierć
+   * kosztuje złoto i czas, a nie cały pakiet.
+   *
+   * Wrogowie stoją tam, gdzie stali, dlatego respawn daje krótką nietykalność —
+   * bez niej powrót w środek pakietu byłby pętlą śmierci.
+   */
+  respawnNow(): void {
     const s = this.store;
     const p = this.player;
-    // Czyścimy arenę — śmierć oznacza powrót do hubu i ponowne wejście (GDD §5.1).
+
+    // Pociski i kałuże z poprzedniego życia znikają — inaczej gracz ginie
+    // od czegoś, na co nie miał już wpływu.
     for (let i = 0; i < s.count; i++) {
-      if (s.alive[i] && (s.kind[i] === Kind.Enemy || s.kind[i] === Kind.Projectile || s.kind[i] === Kind.Hazard)) {
+      if (s.alive[i] && (s.kind[i] === Kind.Projectile || s.kind[i] === Kind.Hazard)) {
         s.despawn(i);
       }
     }
-    this.bossEntity = -1;
+
     s.x[p] = 0;
     s.y[p] = 0;
+    s.prevX[p] = 0;
+    s.prevY[p] = 0;
     s.vx[p] = 0;
     s.vy[p] = 0;
     s.hp[p] = s.maxHp[p];
@@ -835,10 +864,21 @@ export class World {
     this.poise = this.derived.maxPoise;
     this.character.potions = this.balance.combat.player.potions.slots;
     this.comboIndex = 0;
+    this.comboTimer = 0;
+    this.potionHealRemaining = 0;
+    this.consumeBuffer();
     this.setPlayerState(PState.Idle, 0);
-    this.encounter.active = false;
-    this.encounter.intermission = 4;
-    this.encounter.index = Math.max(0, this.encounter.index - 1);
+    this.respawnTimer = 0;
+    this.invulnTimer = this.balance.combat.player.respawnInvulnerable;
+
+    // Wrogowie gubią cel na moment — dostajemy oddech na repozycję.
+    for (let i = 0; i < s.count; i++) {
+      if (!s.alive[i] || s.kind[i] !== Kind.Enemy) continue;
+      this.releaseToken(i);
+      s.state[i] = EState.Chase;
+      s.stateTime[i] = 0;
+      s.cooldown[i] = Math.max(s.cooldown[i], 1.0);
+    }
   }
 
   private killEnemy(e: number): void {

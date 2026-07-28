@@ -14,6 +14,12 @@ async function boot(): Promise<void> {
   try {
     await game.boot(stage!);
     mount(App, { target: ui!, props: { game } });
+
+    // Uchwyt diagnostyczny tylko w dev — pozwala testom i konsoli zajrzeć
+    // w stan symulacji bez zgadywania po pikselach.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __ms: unknown }).__ms = game;
+    }
   } catch (err) {
     console.error("[boot] start nieudany", err);
     ui!.innerHTML = `

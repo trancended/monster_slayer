@@ -109,19 +109,44 @@ ekwipunek z 9 slotami, sprzedaż, porównanie z założonym.
 **Pętla sesyjna (GDD §9.2)** — encountery lekki → średni → ciężki, oddech co trzeci
 (zasada 3/1), mini-boss co piąty, rosnący poziom strefy.
 
-### Utrzymanie zdrowia — dwa pokrętła w `data/combat.json`
+---
 
-| Pole | Domyślnie | Znaczenie |
-|---|---:|---|
-| `player.hpRegen` | `1` | Pasywna regeneracja w HP/s. `0` wyłącza całkowicie. |
-| `player.killHealPct` | `0.1` | Ułamek **maksymalnego HP zabitego wroga** zwracany graczowi. `0` wyłącza. |
+## Świadome odstępstwa od GDD
 
-Leczenie skaluje się z twardością celu, więc mini-boss (1800 HP bazowo) oddaje
-znacznie więcej niż goblin. Zwrot pokazuje się jako zielona liczba nad postacią.
+Wszystkie siedzą w `data/combat.json`, więc powrót do wersji z dokumentu nie
+wymaga dotykania kodu.
 
-> Świadome odstępstwo od GDD §5.1, który zakłada **brak** regeneracji HP
-> („tylko mikstury / lifesteal"). Obie wartości są w danych, więc powrót do
-> wersji z dokumentu to ustawienie ich na `0` — bez dotykania kodu.
+| Co | GDD | Tutaj | Pole |
+|---|---|---|---|
+| Bazowe HP gracza | 100 (§5.1) | **300** | `player.maxHp` |
+| Regeneracja HP | brak, tylko mikstury i lifesteal (§5.1) | **1 HP/s** | `player.hpRegen` |
+| Leczenie za zabójstwo | brak | **10% max HP celu** | `player.killHealPct` |
+| Czasy combo | 0.42 / 0.38 / 0.68 s (§5.2) | **0.30 / 0.27 / 0.46 s** | `combo[].duration` |
+| Okno anulowania | 40 / 45 / 60% (§5.2) | **55 / 55 / 60%** | `combo[].cancelAt` |
+| Atak ciężki | ładowanie 0.9 s, animacja 1.10 s | **0.7 s / 0.85 s** | `heavy.*` |
+| Śmierć | respawn w hubie, arena od nowa (§5.1) | **arena zostaje, wraca sam gracz** | `player.respawnInvulnerable` |
+
+**Atak „co klik".** Poza skróceniem animacji doszło *combo cancel*: gdy cios już
+trafił i minęło okno `cancelAt`, kolejne kliknięcie natychmiast przechodzi do
+następnego ciosu, zamiast czekać na koniec animacji. To jest różnica między
+„atak co animację" a „atak co klik". Unik nadal przerywa atak wg reguły z §4.1.
+
+**Leczenie za zabójstwo** skaluje się z twardością celu, więc mini-boss (1800 HP
+bazowo) oddaje znacznie więcej niż goblin. Zwrot pokazuje się jako zielona
+liczba nad postacią.
+
+**Śmierć nie resetuje areny.** Encounter, wrogowie i ich nadgryzione HP zostają;
+znikają tylko pociski i kałuże z poprzedniego życia, żeby gracz nie ginął od
+czegoś, na co nie miał już wpływu. Odrodzenie daje 2.5 s nietykalności — bez
+tego powrót w środek pakietu byłby pętlą śmierci. Kara za śmierć to nadal 10%
+złota (§5.1).
+
+> ⚠️ **Skutek dla balansu.** Szybszy atak podniósł DPS gracza ~2.4×, przez co
+> wszystkie 38 wierszy tabeli TTK wypada poniżej okna docelowego z §7.3 —
+> mini-boss ginie w ~24 s zamiast 45–70 s. To wprost wynika z zamówionej zmiany,
+> nie z błędu. Przywrócenie okien TTK to podniesienie HP przeciwników
+> (`data/enemies.json`) albo `progression.zoneScaling.hpPerLevel`; nie zrobiłem
+> tego, bo cofałoby efekt, o który chodziło.
 
 **Postacie** — każda encja ma własną sylwetkę rysowaną proceduralnie
 (`render/characters.ts`): bohater z tarczą i mieczem, goblin z uszami i sztyletem,

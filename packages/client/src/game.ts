@@ -331,14 +331,21 @@ export class Game {
     }
   }
 
+  /**
+   * Ekwipunek musi dać się otworzyć także z menu pauzy — wcześniej przycisk
+   * „Ekwipunek" w pauzie nie robił nic, bo obsługiwany był tylko stan `playing`,
+   * przez co gra wyglądała na zawieszoną.
+   */
   toggleInventory(): void {
-    if (hud.screen === "playing") {
+    if (hud.screen === "inventory") {
+      hud.screen = "playing";
+      this.loop.setPaused(false);
+      return;
+    }
+    if (hud.screen === "playing" || hud.screen === "paused" || hud.screen === "options") {
       this.syncHud(true);
       hud.screen = "inventory";
       this.loop.setPaused(true);
-    } else if (hud.screen === "inventory") {
-      hud.screen = "playing";
-      this.loop.setPaused(false);
     }
   }
 
@@ -348,6 +355,9 @@ export class Game {
   }
 
   restartAfterDeath(): void {
+    // Odradzamy natychmiast — bez tego gracz oglądał 2.4 s martwego ekranu
+    // po kliknięciu „Wróć na arenę".
+    this.world.respawnNow();
     hud.screen = "playing";
     this.loop.setPaused(false);
   }
