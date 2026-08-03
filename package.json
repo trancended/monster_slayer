@@ -12,10 +12,15 @@
     "build": "pnpm --filter @ms/client build",
     "preview": "pnpm --filter @ms/client preview",
     "sim": "pnpm --filter @ms/sim start",
+    "sim:idle": "pnpm --filter @ms/sim idle",
+    "test:unit": "node --test \"packages/core/test/*.test.ts\"",
     "typecheck": "pnpm -r typecheck",
     "e2e": "playwright test",
     "e2e:prod": "E2E_BASE_URL=http://localhost:8080 playwright test",
     "shot": "PW_TOOLS=true playwright test tests/shot.spec.ts",
+    "shot:idle": "PW_TOOLS=true playwright test tests/idle-shot.spec.ts",
+    "shot:fx": "PW_TOOLS=true playwright test tests/fx-shot.spec.ts",
+    "shot:3d": "PW_TOOLS=true playwright test tests/shot-3d.spec.ts",
     "gallery": "PW_TOOLS=true playwright test tests/gallery.spec.ts"
   },
   "devDependencies": {

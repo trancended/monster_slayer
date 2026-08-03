@@ -1,4 +1,13 @@
 /**
+ * Płaskie sylwetki postaci — używane już **wyłącznie przez galerię** (`gallery.ts`)
+ * jako szybki podgląd czytelności kształtów.
+ *
+ * Renderer 3D nie wytłacza ich od czasu przejścia na bryły: płaskie wyciągnięcie
+ * dawało postacie „płaskie jak piernik" — z boku znikały, światło nie miało na
+ * czym pracować, a cień był prostokątem. Prawdziwe ciała opisuje
+ * `render3d/bodies.ts` (tors, głowa, ramiona, nogi, broń) i to on jest teraz
+ * źródłem wyglądu w grze.
+ *
  * Sylwetki postaci rysowane proceduralnie — bez atlasów i bez plików graficznych.
  *
  * Każda postać to lista prymitywów w znormalizowanej przestrzeni:
@@ -315,4 +324,84 @@ export function drawCharacter(
  */
 export function characterHeight(radius: number): number {
   return radius * ISO_W * 3.0 * 1.2;
+}
+
+/**
+ * Geometria ostrza bohatera w tej samej znormalizowanej przestrzeni co `PLAYER`.
+ * Trzymana osobno, bo blask krytyka ma obejmować **sam miecz**, a nie całą
+ * sylwetkę — poświata na całej postaci czyta się jak buff, a nie jak cios.
+ * Musi zostać zgodna z prymitywami „ostrze" i „jelec" w `PLAYER`.
+ */
+const PLAYER_BLADE = {
+  blade: [0.5, -0.62, 0.62, -0.55, 1.06, -1.02, 0.98, -1.1],
+  tip: { x: 1.02, y: -1.06 },
+  guard: { x1: 0.42, y1: -0.52, x2: 0.66, y2: -0.72 },
+} as const;
+
+/**
+ * Rozświetlone ostrze przy krytyku.
+ *
+ * Rysowane w **dwóch przebiegach**, bo samo addytywne nakładanie nie wystarcza:
+ * ostrze bohatera jest prawie białe (`0xdfe7f2`), a czerwień dodana do bieli
+ * daje z powrotem biel. Efekt wygląda wtedy jak zwykły błysk, a nie jak
+ * rozgrzana klinga.
+ *
+ *  • `mode: "core"` — **krycie normalne**, opaque czerwień podmieniająca stal.
+ *    To ona sprawia, że miecz jest czerwony, a nie jasny.
+ *  • `mode: "aura"` — **addytywnie**, szeroka poświata wychodząca poza ostrze
+ *    na ciemne tło, gdzie czerwień faktycznie czyta się jako czerwień.
+ */
+export type BladeGlowMode = "core" | "aura";
+
+export function drawBladeGlow(
+  g: Graphics,
+  radius: number,
+  color: number,
+  intensity: number,
+  mode: BladeGlowMode = "aura",
+): void {
+  g.clear();
+  if (intensity <= 0) return;
+
+  const unit = radius * ISO_W;
+  const halfW = unit * 1.55;
+  const height = unit * 3.0;
+  const px = (nx: number) => nx * halfW;
+  const py = (ny: number) => ny * height;
+
+  const pts: number[] = [];
+  for (let i = 0; i < PLAYER_BLADE.blade.length; i += 2) {
+    pts.push(px(PLAYER_BLADE.blade[i]!), py(PLAYER_BLADE.blade[i + 1]!));
+  }
+  const tipX = px(PLAYER_BLADE.tip.x);
+  const tipY = py(PLAYER_BLADE.tip.y);
+
+  if (mode === "core") {
+    // Rozgrzana klinga: ciemniejsza czerwień u nasady, jasna przy czubku —
+    // tak wygląda metal, który rozgrzewa się od ostrza.
+    g.poly(pts).fill({ color, alpha: intensity });
+    g.poly(pts).stroke({ width: px(0.05), color: 0xffd9d0, alpha: 0.65 * intensity, cap: "round" });
+    g.moveTo(px(PLAYER_BLADE.guard.x1), py(PLAYER_BLADE.guard.y1))
+      .lineTo(px(PLAYER_BLADE.guard.x2), py(PLAYER_BLADE.guard.y2))
+      .stroke({ width: px(0.13), color, alpha: 0.85 * intensity, cap: "round" });
+    return;
+  }
+
+  // Aura: trzy przejścia o malejącej szerokości. Addytywne sumowanie daje
+  // gradient, którego `Graphics` nie umie narysować wprost.
+  // Szerokości i alfy dobrane pod DOMYŚLNĄ odległość kamery: przy sylwetce
+  // wysokiej ~40 px subtelna poświata ginie, więc aura musi wychodzić poza
+  // ostrze na tyle, żeby dało się ją zauważyć kątem oka.
+  const layers: [number, number][] = [
+    [px(0.85), 0.1 * intensity],
+    [px(0.5), 0.18 * intensity],
+    [px(0.24), 0.34 * intensity],
+  ];
+  for (const [width, alpha] of layers) {
+    g.poly(pts).stroke({ width, color, alpha, cap: "round", join: "round" });
+  }
+
+  // Rozbłysk na czubku — tam wzrok szuka końca zamachu.
+  g.circle(tipX, tipY, px(0.42) * intensity).fill({ color, alpha: 0.14 * intensity });
+  g.circle(tipX, tipY, px(0.2) * intensity).fill({ color, alpha: 0.3 * intensity });
 }

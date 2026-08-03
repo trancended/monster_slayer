@@ -61,8 +61,18 @@ test("pasywna regeneracja zatrzymuje się na max HP", async ({ page }) => {
   expect(s0.hpRegen).toBeGreaterThan(0);
 
   // Ustawiamy HP tuż pod maksimum i czekamy dłużej, niż trzeba na dobicie.
+  //
+  // Arenę najpierw czyścimy i wstrzymujemy kolejną falę. Bez tego test mierzy
+  // regenerację w trakcie walki: bohater stoi bezczynnie przez sześć sekund,
+  // wróg zdąży go trafić i „regeneracja nie dobiła do maksimum" oznacza
+  // wtedy tyle, że gracz oberwał. Sprawdzamy regenerację, nie przeżywalność.
   await page.evaluate(`(() => {
     const w = window.__ms.world, s = w.store, p = w.player;
+    for (let i = 0; i < s.count; i++) {
+      if (s.alive[i] && s.kind[i] === 2) w.damageEnemy(i, 1e12, false, 'physical', 0, 0, 0, true);
+    }
+    w.encounter.active = false;
+    w.encounter.intermission = 9999;
     s.hp[p] = s.maxHp[p] - 3;
   })()`);
   await page.waitForTimeout(6000);

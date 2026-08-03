@@ -44,6 +44,7 @@
           <dt>Shift</dt><dd>Sprint</dd>
           <dt>1</dt><dd>Mikstura (leczy 45% HP w 1.5 s)</dd>
           <dt>I</dt><dd>Ekwipunek i atrybuty</dd>
+          <dt>G</dt><dd>Panel idle — ulepszenia i prestiż</dd>
           <dt>Esc / Tab</dt><dd>Menu</dd>
         </dl>
         <p class="trackpad">
@@ -65,6 +66,8 @@
           <button class="primary" onclick={() => game.resume()}>Wróć do gry</button>
           <button onclick={() => (hud.screen = "options")}>Opcje i dostępność</button>
           <button onclick={() => game.toggleInventory()}>Ekwipunek</button>
+          <button onclick={() => game.openIdlePanel()}>Ulepszenia i prestiż</button>
+          <button onclick={() => game.openCharacterSheet()}>Ekran postaci</button>
         </div>
         <p class="note mono">
           Poziom {hud.level} · {hud.gold} złota · {hud.kills} zabójstw · encounter {hud.encounter}
@@ -83,6 +86,46 @@
                 title={d.hint}
               >{d.label}</button>
             {/each}
+          </div>
+        </section>
+
+        <section>
+          <h2>Widok</h2>
+          <p class="hint">
+            Zmiana widoku wymaga przeładowania strony — perspektywa i rzut
+            równoległy to dwie różne kamery, nie przełącznik na gotowej.
+          </p>
+          <div class="chips">
+            <button
+              class:active={hud.settings.cameraMode === "tpp"}
+              onclick={() => update("cameraMode", "tpp")}
+              title="Kamera zza pleców, obracająca się za postacią. WASD względem kadru."
+            >Zza pleców (TPP)</button>
+            <button
+              class:active={hud.settings.cameraMode === "iso"}
+              onclick={() => update("cameraMode", "iso")}
+              title="Rzut 3/4 z góry. Czytelniejszy przy dużych pakietach wrogów."
+            >Rzut 3/4</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Sterowanie</h2>
+          <p class="hint">
+            Na trackpadzie prowadzenie kursora i chodzenie naraz jest męczące —
+            dlatego domyślnie postać patrzy tam, gdzie idzie.
+          </p>
+          <div class="chips">
+            <button
+              class:active={hud.settings.aimMode === "movement"}
+              onclick={() => update("aimMode", "movement")}
+              title="Postać obraca się w kierunku ruchu (WASD). Prawa gałka pada nadal celuje."
+            >Kierunek ruchu</button>
+            <button
+              class:active={hud.settings.aimMode === "cursor"}
+              onclick={() => update("aimMode", "cursor")}
+              title="Postać patrzy na kursor niezależnie od kierunku chodzenia."
+            >Celowanie kursorem</button>
           </div>
         </section>
 

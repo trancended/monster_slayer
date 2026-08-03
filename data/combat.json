@@ -150,5 +150,50 @@
     "maxEnemies": 24,
     "maxProjectiles": 120,
     "attackTokens": 2
+  },
+  "killCombo": {
+    "_note": "Combo zabójstw (mnożnik nagród). Okno kurczy się z tierem — im wyżej, tym ostrzej trzeba grać. Multiplikatory dotyczą złota i XP; szansa na łup rośnie osobno i wolniej, żeby combo nie zastąpiło znajdźki.",
+    "window": 4.0,
+    "windowPerTier": -0.3,
+    "windowMin": 2.0,
+    "dropChanceBonusPerTier": 0.03,
+    "tiers": [
+      {
+        "at": 3,
+        "name": "Seria",
+        "mult": 1.25,
+        "color": "#9fe8ff"
+      },
+      {
+        "at": 6,
+        "name": "Rzeź",
+        "mult": 1.6,
+        "color": "#7cf0a8"
+      },
+      {
+        "at": 10,
+        "name": "Masakra",
+        "mult": 2.2,
+        "color": "#ffd447"
+      },
+      {
+        "at": 16,
+        "name": "Zagłada",
+        "mult": 3.0,
+        "color": "#ff9c4a"
+      },
+      {
+        "at": 25,
+        "name": "Legenda",
+        "mult": 4.0,
+        "color": "#ff5f7a"
+      },
+      {
+        "at": 40,
+        "name": "Nieśmiertelny",
+        "mult": 5.0,
+        "color": "#d98cff"
+      }
+    ]
   }
 }

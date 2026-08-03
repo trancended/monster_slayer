@@ -24,6 +24,12 @@ export interface CharacterState {
   inventory: Item[];
   killsWithoutDrop: number;
   totalKills: number;
+  /**
+   * Ilu bossów gracz pokonał. Steruje pulą wrogów: każdy pokonany boss
+   * dokłada nowe typy jednostek. Trzymane w postaci, bo ma przetrwać zapis —
+   * sam bestiariusz odtwarza się z ziarna i niczego nie zajmuje.
+   */
+  bossesDefeated: number;
 }
 
 export interface DerivedStats {
@@ -57,6 +63,7 @@ export function createCharacter(balance: Balance): CharacterState {
     inventory: [],
     killsWithoutDrop: 0,
     totalKills: 0,
+    bossesDefeated: 0,
   };
 }
 

@@ -6,10 +6,23 @@
 import { get, set, del } from "idb-keyval";
 import type { CharacterState } from "@ms/core";
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface GameSettings {
   difficulty: string;
+  /**
+   * Skąd bierze się kierunek postaci.
+   *  • `movement` — postać patrzy tam, gdzie idzie (WASD). Domyślne, bo na
+   *    trackpadzie ciągłe celowanie kursorem jest wyczerpujące.
+   *  • `cursor` — klasyczne celowanie myszą, niezależne od kierunku ruchu.
+   */
+  aimMode: "movement" | "cursor";
+  /**
+   * Widok. `tpp` — kamera zza pleców, obracająca się za postacią.
+   * `iso` — rzut 3/4 z góry, czytelniejszy przy dużych pakietach wrogów.
+   * Zmiana wymaga przeładowania sceny, więc gra prosi o odświeżenie.
+   */
+  cameraMode: "tpp" | "iso";
   shakeIntensity: number;
   uiScale: number;
   colorblind: "none" | "protanopia" | "deuteranopia" | "tritanopia";
@@ -26,10 +39,19 @@ export interface SaveData {
   encounterIndex: number;
   settings: GameSettings;
   stats: { kills: number; playtime: number; deaths: number };
+  /**
+   * Stan warstwy idle (plan v4). Trzymany jako nieprzezroczysty blob, bo
+   * `deserializeIdleState` z rdzenia i tak waliduje każde pole z osobna —
+   * duplikowanie tej wiedzy w typie zapisu oznaczałoby dwie migracje zamiast
+   * jednej. Odpowiednik `state_blob JSONB` z v4 §7.4.
+   */
+  idle?: unknown;
 }
 
 export const DEFAULT_SETTINGS: GameSettings = {
   difficulty: "hunter",
+  aimMode: "movement",
+  cameraMode: "tpp",
   shakeIntensity: 0.6,
   uiScale: 1,
   colorblind: "none",
@@ -78,6 +100,12 @@ function migrate(raw: SaveData): SaveData {
     // i gasi cały panel ekwipunku, dlatego przepisujemy kolizje na unikaty.
     dedupeItemIds(data);
   }
+  if (data.save_version < 3) {
+    // v3 dokłada warstwę idle. Zapis sprzed pivotu nie ma pola `idle` i to jest
+    // poprawny stan: `IdleController` zbuduje świeży stan, a postać z walki
+    // zostaje nietknięta. Wipe przy patchu jest anty-wzorcem (v4 §12).
+    data.idle = undefined;
+  }
   data.save_version = SAVE_VERSION;
   data.settings = { ...DEFAULT_SETTINGS, ...data.settings };
   data.settings.audio = { ...DEFAULT_SETTINGS.audio, ...data.settings.audio };
@@ -89,6 +117,12 @@ function dedupeItemIds(data: SaveData): void {
   if (!ch) return;
   if (!Array.isArray(ch.inventory)) ch.inventory = [];
   if (!ch.equipment || typeof ch.equipment !== "object") ch.equipment = {};
+  // Zapis sprzed proceduralnego bestiariusza nie zna licznika bossów. Postać
+  // wchodzi do świata przez podstawienie całego obiektu, więc brak pola dałby
+  // `undefined + 1` — czyli NaN w liczniku odblokowań, bez żadnego wyjątku.
+  if (typeof ch.bossesDefeated !== "number" || !Number.isFinite(ch.bossesDefeated)) {
+    ch.bossesDefeated = 0;
+  }
 
   const seen = new Set<string>();
   const prefix = `fix${Date.now().toString(36)}`;

@@ -5,7 +5,19 @@
 import type { Item, ItemRarityId } from "@ms/core";
 import { DEFAULT_SETTINGS, type GameSettings } from "../save/save.ts";
 
-export type Screen = "start" | "playing" | "paused" | "options" | "inventory" | "dead";
+export type Screen =
+  | "start"
+  | "playing"
+  | "paused"
+  | "options"
+  | "inventory"
+  | "dead"
+  /** Ekran powrotu (v4 §2.2) — ma pierwszeństwo przed wszystkim innym. */
+  | "return"
+  /** Panel idle: ulepszenia, strefa, automatyzacje, prestiż. */
+  | "idle"
+  /** Ekran postaci pod screenshot (v4 §5.8). */
+  | "sheet";
 
 export interface Toast {
   id: number;
@@ -51,6 +63,18 @@ export const hud = $state({
   heavyCharge: 0,
   dodgeReady: true,
   comboIndex: 0,
+
+  // — combo zabójstw (mnożnik nagród). `comboTier === -1` oznacza serię
+  //   poniżej pierwszego progu: licznik już rośnie, ale mnożnik to jeszcze 1.
+  comboCount: 0,
+  comboTier: -1,
+  comboName: "",
+  comboMultiplier: 1,
+  comboColor: "#9aa3b2",
+  /** 0–1, ile zostało do zerwania serii — pasek odlicza w dół. */
+  comboFraction: 0,
+  comboBest: 0,
+  comboToNext: null as number | null,
 
   fps: 0,
   simMs: 0,

@@ -1,0 +1,102 @@
+{
+  "version": 1,
+  "note": "Unikaty (v4 §4.6, §5.4). Reguła gatunku: unikat ZMIENIA ZASADY, nie liczby. Żaden wpis tutaj nie może być czystym '+X% obrażeń' — od tego są afiksy. Pola `effects` mapują się 1:1 na IdleBonuses; `keystone` wystawia identyfikator reguły do silnika.",
+  "uniques": [
+    {
+      "id": "cold_steel_blade",
+      "name": "Zimna Stal",
+      "slot": "weapon",
+      "flavor": "Klinga, która nigdy nie znalazła słabego punktu — bo nigdy go nie szukała.",
+      "modifier": "Twoje ataki nie mogą trafiać krytycznie. Zamiast tego ×3,5 obrażeń bazowych.",
+      "effects": { "moreDamage": 2.5, "critChance": -1, "keystone": "noCrit" }
+    },
+    {
+      "id": "chain_of_hunger",
+      "name": "Łańcuch Głodu",
+      "slot": "belt",
+      "flavor": "Nie zjada wrogów pojedynczo. Zjada pakiet.",
+      "modifier": "Obrażenia obszarowe działają na 100% pakietu, ale obrażenia na pojedynczy cel −40%.",
+      "effects": { "areaDamage": 4, "moreDamage": -0.4 }
+    },
+    {
+      "id": "dreamers_shroud",
+      "name": "Całun Śniącego",
+      "slot": "chest",
+      "flavor": "Śpi lepiej, niż walczy. I to jest jego zaleta.",
+      "modifier": "Limit offline +8 h, efektywność offline −0,15. Kto wraca rzadziej, dostaje więcej.",
+      "effects": { "offlineCapHours": 8, "offlineEfficiency": -0.15 }
+    },
+    {
+      "id": "tithe_of_the_tenth",
+      "name": "Dziesięcina",
+      "slot": "amulet",
+      "flavor": "Płacisz dziewięć razy, żeby dostać za dziesiątym.",
+      "modifier": "Co dziesiąta strefa daje podwójne złoto. Pozostałe −20%.",
+      "effects": { "goldFind": -0.2, "keystone": "tithe" }
+    },
+    {
+      "id": "glasscutter_gloves",
+      "name": "Rękawice Szklarza",
+      "slot": "gloves",
+      "flavor": "Precyzja kupiona wprost za wytrzymałość ciosu.",
+      "modifier": "+25 pkt proc. szansy na krytyk, ale obrażenia bazowe −60%.",
+      "effects": { "critChance": 0.25, "moreDamage": -0.6 }
+    },
+    {
+      "id": "stormcallers_greaves",
+      "name": "Nagolenice Przywoływacza Burz",
+      "slot": "boots",
+      "flavor": "Nie stoi w miejscu wystarczająco długo, żeby przyłożyć mocno.",
+      "modifier": "+120% szybkości ataku, ale każdy cios zadaje o połowę mniej.",
+      "effects": { "attackSpeed": 1.2, "moreDamage": -0.5 }
+    },
+    {
+      "id": "crown_of_the_pauper",
+      "name": "Korona Nędzarza",
+      "slot": "helmet",
+      "flavor": "Bogaty w łup, ubogi w monetę.",
+      "modifier": "×3 znajdźki, ale znaleźne złoto −70%.",
+      "effects": { "magicFind": 2, "goldFind": -0.7 }
+    },
+    {
+      "id": "ring_of_deep_roots",
+      "name": "Pierścień Głębokich Korzeni",
+      "slot": "ring1",
+      "flavor": "Im dalej zaszedłeś, tym mocniej trzyma.",
+      "modifier": "+1,5% obrażeń za każdą strefę rekordu, ale −50% obrażeń poniżej strefy 20.",
+      "effects": { "keystone": "deepRoots" }
+    },
+    {
+      "id": "ring_of_the_last_hour",
+      "name": "Pierścień Ostatniej Godziny",
+      "slot": "ring2",
+      "flavor": "Działa tylko wtedy, kiedy cię nie ma.",
+      "modifier": "Efektywność offline +0,30, ale w trybie aktywnym obrażenia −25%.",
+      "effects": { "offlineEfficiency": 0.3, "keystone": "lastHour" }
+    },
+    {
+      "id": "butchers_apron",
+      "name": "Fartuch Rzeźnika",
+      "slot": "chest",
+      "flavor": "Jeden cel. Zawsze jeden.",
+      "modifier": "Nie zadajesz obrażeń obszarowych. W zamian ×6 obrażeń na pojedynczy cel.",
+      "effects": { "moreDamage": 5, "areaDamage": -10, "keystone": "singleMinded" }
+    },
+    {
+      "id": "prospectors_belt",
+      "name": "Pas Poszukiwacza",
+      "slot": "belt",
+      "flavor": "Zamienia każdą minutę farmienia w monetę — i każdą monetę w kolejną minutę.",
+      "modifier": "Znaleźne złoto rośnie o 2% za każde 10 stref rekordu. Bez sufitu.",
+      "effects": { "keystone": "prospector" }
+    },
+    {
+      "id": "twin_fang_dagger",
+      "name": "Bliźniaczy Kieł",
+      "slot": "weapon",
+      "flavor": "Dwa ostrza, jeden zamach, połowa masy.",
+      "modifier": "Obrażenia krytyczne ×2, szansa na krytyk ×0. Krytyk wraca tylko z innych źródeł.",
+      "effects": { "critMult": 1.0, "critChance": -0.05 }
+    }
+  ]
+}

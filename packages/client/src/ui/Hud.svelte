@@ -51,6 +51,40 @@
   </div>
 {/if}
 
+<!--
+  Licznik serii zabójstw. Siedzi w centrum-górze, bo to jedyny wskaźnik,
+  który trzeba widzieć peryferyjnie w trakcie walki — spojrzenie w róg
+  ekranu kosztuje serię. Kolor niesie tier, ale nazwa i mnożnik są wypisane,
+  więc informacja nie zależy od rozróżniania barw (GDD §10.3).
+-->
+{#if hud.comboCount > 0}
+  <div
+    class="combo-meter"
+    class:tiered={hud.comboTier >= 0}
+    style="--tier:{hud.comboColor}"
+    role="status"
+    aria-label="Seria zabójstw: {hud.comboCount}, mnożnik {hud.comboMultiplier}"
+  >
+    <div class="c-count mono">
+      {hud.comboCount}<span class="c-x">×</span>
+    </div>
+    <div class="c-info">
+      {#if hud.comboTier >= 0}
+        <div class="c-name">{hud.comboName}</div>
+        <div class="c-mult mono">×{hud.comboMultiplier.toFixed(2).replace(/\.?0+$/, "")} nagród</div>
+      {:else}
+        <div class="c-name muted">Seria</div>
+        <div class="c-mult mono muted">
+          {#if hud.comboToNext !== null}jeszcze {hud.comboToNext}{/if}
+        </div>
+      {/if}
+    </div>
+    <div class="bar c-timer" aria-hidden="true">
+      <i style="width:{Math.round(hud.comboFraction * 100)}%"></i>
+    </div>
+  </div>
+{/if}
+
 <div class="topright mono">
   <div class="gold">{hud.gold} <span class="muted">złota</span></div>
   <div class="muted">Zabójstwa: {hud.kills}</div>
@@ -375,5 +409,94 @@
   }
   .net.offline {
     color: #ffb84d;
+  }
+
+  /* ── licznik serii zabójstw ──────────────────────────────────────────── */
+
+  .combo-meter {
+    position: absolute;
+    top: 4.5em;
+    left: 50%;
+    transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 0 0.6em;
+    padding: 0.45em 0.9em 0.5em;
+    border-radius: 12px;
+    background: rgba(10, 13, 20, 0.72);
+    border: 1px solid var(--tier, #9aa3b2);
+    box-shadow: 0 0 22px -6px var(--tier, transparent);
+    pointer-events: none;
+    min-width: 11em;
+  }
+
+  .c-count {
+    grid-row: 1 / span 2;
+    font-size: 2.1em;
+    font-weight: 900;
+    line-height: 1;
+    color: var(--tier, var(--text));
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8);
+  }
+
+  .c-x {
+    font-size: 0.5em;
+    opacity: 0.65;
+    margin-left: 0.1em;
+  }
+
+  .c-info {
+    line-height: 1.2;
+  }
+
+  .c-name {
+    font-weight: 700;
+    font-size: 0.92em;
+    color: var(--tier, var(--text));
+    letter-spacing: 0.02em;
+  }
+
+  .c-mult {
+    font-size: 0.76em;
+    color: var(--muted);
+  }
+
+  .c-timer {
+    grid-column: 1 / span 2;
+    height: 3px;
+    margin-top: 0.4em;
+  }
+
+  .c-timer > i {
+    background: var(--tier, var(--accent));
+    /* Zegar odlicza w dół — bez przejścia, bo skok wstecz przy zabójstwie
+       ma być natychmiastowy i czytelny jako „seria przedłużona". */
+    transition: none;
+  }
+
+  /* Wejście w tier: jednorazowy impuls. Powtarzalna animacja w tym miejscu
+     przeszkadzałaby w czytaniu pola walki. */
+  .combo-meter.tiered {
+    animation: combo-pop 0.28s ease-out;
+  }
+
+  @keyframes combo-pop {
+    0% {
+      transform: translateX(-50%) scale(1);
+    }
+    45% {
+      transform: translateX(-50%) scale(1.12);
+    }
+    100% {
+      transform: translateX(-50%) scale(1);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .combo-meter.tiered {
+      animation: none;
+    }
   }
 </style>

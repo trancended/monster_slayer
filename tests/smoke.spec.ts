@@ -95,16 +95,25 @@ test("F5 nie gubi postępu (IndexedDB)", async ({ page }) => {
   const cy = (box?.height ?? 800) / 2;
 
   // Zbieramy złoto — autozapis leci m.in. po wyczyszczeniu encounteru.
+  // Bot chodzi WASD-em, a nie tylko klika. Od czasu przejścia na celowanie
+  // kierunkiem ruchu (domyślne, patrz Opcje → Sterowanie) postać stojąca
+  // w miejscu nie obraca się — bot bez ruchu bije wyłącznie przed siebie
+  // i przestaje reprezentować gracza.
+  const KIERUNKI = ["KeyW", "KeyD", "KeyS", "KeyA"] as const;
   const deadline = Date.now() + 22_000;
   let a = 0;
   let i = 0;
   while (Date.now() < deadline) {
     if (++i % 12 === 0) await ensurePlaying(page);
     a += 0.5;
+
+    const kier = KIERUNKI[i % KIERUNKI.length]!;
+    await page.keyboard.down(kier);
     await page.mouse.move(cx + Math.cos(a) * 200, cy + Math.sin(a) * 120);
     await page.mouse.down();
     await page.waitForTimeout(80);
     await page.mouse.up();
+    await page.keyboard.up(kier);
     await page.keyboard.press("Space");
     await page.waitForTimeout(90);
   }
@@ -115,7 +124,19 @@ test("F5 nie gubi postępu (IndexedDB)", async ({ page }) => {
   const readKills = async () =>
     Number((await page.locator("text=/Zabójstwa: \\d+/").first().innerText()).replace(/\D/g, ""));
 
-  expect(await readGold(), "gracz powinien zebrać trochę złota").toBeGreaterThan(0);
+  /*
+   * Warunek wstępny to **zabójstwa**, nie złoto.
+   *
+   * Ten test nazywa się „F5 nie gubi postępu" i ma sprawdzać PERSYSTENCJĘ.
+   * Wcześniej wymagał, żeby bot zdążył zabić wroga ORAZ przejść po upuszczonym
+   * złocie w 22 s — czyli sprawdzał przy okazji nawigację bota. Przy ~13 fps
+   * w rasteryzacji programowej (headless) to bywało kwestią szczęścia i test
+   * padał, mimo że zapis działał bez zarzutu.
+   *
+   * Licznik zabójstw jest zapisywany tak samo jak złoto, więc nadaje się do
+   * tej weryfikacji równie dobrze — a rośnie niezawodnie.
+   */
+  expect(await readKills(), "bot powinien kogoś zabić w 22 s").toBeGreaterThan(0);
 
   // Odczekujemy ponad jeden cykl autosave'u (8 s), żeby stan na dysku
   // odpowiadał stanowi na ekranie. `pagehide` nie zdąży dokończyć
@@ -129,11 +150,13 @@ test("F5 nie gubi postępu (IndexedDB)", async ({ page }) => {
   await page.waitForTimeout(1500);
   await ensurePlaying(page);
 
+  expect(await readKills(), "licznik zabójstw musi przeżyć F5").toBeGreaterThanOrEqual(kills);
   // Margines 10% pokrywa karę za ewentualną śmierć w trakcie oczekiwania.
+  // Gdy bot nie zdążył podnieść złota, warunek jest spełniony trywialnie —
+  // niosącą asercją jest wtedy licznik zabójstw powyżej.
   expect(await readGold(), "złoto musi przeżyć F5").toBeGreaterThanOrEqual(
     Math.floor(gold * 0.9),
   );
-  expect(await readKills(), "licznik zabójstw musi przeżyć F5").toBeGreaterThanOrEqual(kills);
 });
 
 test("gra działa z wyłączonym backendem (tryb offline)", async ({ page }) => {
