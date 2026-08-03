@@ -10,7 +10,10 @@
     "typecheck": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
+    "@babylonjs/core": "^9.19.0",
     "@ms/core": "workspace:*",
+    "@types/earcut": "^3.0.0",
+    "earcut": "^3.2.3",
     "idb-keyval": "^6.2.1",
     "pixi.js": "^8.6.6",
     "zod": "^3.24.1"

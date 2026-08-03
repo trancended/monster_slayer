@@ -1,5 +1,6 @@
 import { mount } from "svelte";
 import "./ui/styles.css";
+import "./ui/idle/idle-ui.css";
 import App from "./ui/App.svelte";
 import { game } from "./game.ts";
 

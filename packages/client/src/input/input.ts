@@ -17,6 +17,7 @@ export type Action =
   | "potion"
   | "menu"
   | "inventory"
+  | "idle"
   | "highlightLoot";
 
 export const DEFAULT_BINDINGS: Record<Action, string[]> = {
@@ -35,6 +36,8 @@ export const DEFAULT_BINDINGS: Record<Action, string[]> = {
   // Esc w pełnym ekranie wychodzi z fullscreena, więc menu jest też pod Tab (GDD §4.2).
   menu: ["Escape", "Tab"],
   inventory: ["KeyI"],
+  // Panel idle: ulepszenia, strefa, automatyzacje, prestiż (v4 §3).
+  idle: ["KeyG"],
   highlightLoot: ["AltLeft", "AltRight"],
 };
 
@@ -50,6 +53,7 @@ export const FORBIDDEN_CODES = new Set([
 export interface InputCallbacks {
   onMenuToggle(): void;
   onInventoryToggle(): void;
+  onIdleToggle(): void;
   onGamepadDetected(): void;
 }
 
@@ -66,6 +70,26 @@ export class InputManager {
   private potionPressed = false;
   private keyAttackPressed = false;
   private keyHeavyPressed = false;
+
+  /**
+   * Tryb celowania. `movement` (domyślny) obraca postać w stronę ruchu —
+   * na trackpadzie to jedyna wygodna opcja, bo nie wymaga jednoczesnego
+   * prowadzenia kursora i chodzenia. `cursor` zachowuje celowanie myszą.
+   */
+  aimMode: "movement" | "cursor" = "movement";
+
+  /**
+   * Kierunek patrzenia kamery (radiany) w widoku TPP; `NaN` w rzucie 3/4.
+   *
+   * W TPP „W" musi znaczyć „przed siebie względem kadru", a nie „na północ
+   * świata" — inaczej po obrocie kamery klawisze przestają odpowiadać temu,
+   * co widzi gracz, i sterowanie robi się nieużywalne.
+   */
+  viewYaw = Number.NaN;
+
+  /** Ostatni kierunek patrzenia — postać stojąca w miejscu go nie gubi. */
+  private lastAimX = 1;
+  private lastAimY = 0;
 
   gamepadIndex: number | null = null;
   highlightLoot = false;
@@ -98,6 +122,7 @@ export class InputManager {
       this.down.add(e.code);
       if (this.matches("menu", e.code)) this.cb.onMenuToggle();
       if (this.matches("inventory", e.code)) this.cb.onInventoryToggle();
+      if (this.matches("idle", e.code)) this.cb.onIdleToggle();
       if (this.matches("dodge", e.code)) this.dodgePressed = true;
       if (this.matches("potion", e.code)) this.potionPressed = true;
       if (this.matches("attack", e.code)) this.keyAttackPressed = true;
@@ -190,7 +215,11 @@ export class InputManager {
    * Zapisuje intencję do struktury World. Kierunki są ekranowe i przeliczane
    * na osie świata — w izometrii „w górę" to (−1, −1).
    */
-  writeIntent(intent: PlayerIntent, aimWorld: { x: number; y: number }): void {
+  writeIntent(
+    intent: PlayerIntent,
+    aimWorld: { x: number; y: number },
+    playerPos?: { x: number; y: number },
+  ): void {
     let sx = 0;
     let sy = 0;
     if (this.isDown("moveUp")) sy -= 1;
@@ -225,11 +254,52 @@ export class InputManager {
       }
     }
 
-    // Ekran → świat: W = (−1,−1), D = (+1,−1).
-    intent.moveX = (sx + sy) * 0.7071;
-    intent.moveY = (sy - sx) * 0.7071;
-    intent.aimX = aimWorld.x;
-    intent.aimY = aimWorld.y;
+    if (Number.isFinite(this.viewYaw)) {
+      // TPP: osie wejścia obracamy o kąt kamery. `−sy`, bo W daje sy = −1,
+      // a „przód" to dodatni kierunek patrzenia.
+      const fx = Math.cos(this.viewYaw);
+      const fy = Math.sin(this.viewYaw);
+      // Prawo = przód obrócony o −90°.
+      const rx = fy;
+      const ry = -fx;
+      const mx = fx * -sy + rx * sx;
+      const my = fy * -sy + ry * sx;
+      const len = Math.hypot(mx, my);
+      intent.moveX = len > 1 ? mx / len : mx;
+      intent.moveY = len > 1 ? my / len : my;
+    } else {
+      // Rzut 3/4, ekran → świat: W = (−1,−1), D = (+1,−1).
+      intent.moveX = (sx + sy) * 0.7071;
+      intent.moveY = (sy - sx) * 0.7071;
+    }
+
+    if (this.aimMode === "movement" && playerPos) {
+      // Kierunek patrzenia bierzemy z wektora ruchu. Świat liczy `facing`
+      // z RÓŻNICY między punktem celowania a pozycją gracza, więc podajemy
+      // punkt kilka metrów przed postacią, a nie sam wektor.
+      const len = Math.hypot(intent.moveX, intent.moveY);
+      if (len > 0.01) {
+        this.lastAimX = intent.moveX / len;
+        this.lastAimY = intent.moveY / len;
+      }
+      // Pad ma prawo nadpisać kierunek prawą gałką — to nadal celowanie.
+      if (pad && Math.hypot(pad.rx, pad.ry) > 0.25) {
+        const pl = Math.hypot(pad.rx, pad.ry);
+        this.lastAimX = pad.rx / pl;
+        this.lastAimY = pad.ry / pl;
+      }
+      // Stojąc w miejscu postać zachowuje poprzedni kierunek, zamiast wracać
+      // do domyślnego — inaczej każde puszczenie klawisza obracałoby ją w bok.
+      intent.aimX = playerPos.x + this.lastAimX * 4;
+      intent.aimY = playerPos.y + this.lastAimY * 4;
+      // W bezruchu świat sam obraca postać do najbliższego wroga — bez tego
+      // stojący gracz nie miałby jak zaatakować kogoś za plecami.
+      intent.autoFace = true;
+    } else {
+      intent.aimX = aimWorld.x;
+      intent.aimY = aimWorld.y;
+      intent.autoFace = false;
+    }
     intent.sprint = sprint;
     intent.dodgePressed = dodge;
     intent.potionPressed = potion;

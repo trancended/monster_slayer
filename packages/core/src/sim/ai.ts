@@ -36,6 +36,7 @@ export function updateEnemyAi(world: World, dt: number): void {
       s.poise[e] = Math.min(s.maxPoise[e], s.poise[e] + 5 * dt);
     }
     applyEliteTraits(world, e, dt);
+    applyGeneratedTraits(world, e, def, dt);
 
     // Cel: iluzja z „Butów Widma" ma pierwszeństwo przed graczem.
     const decoy = findDecoy(world);
@@ -313,6 +314,46 @@ function applyEliteTraits(world: World, e: number, dt: number): void {
     // Regenerujący: 3% HP/s poza walką (bez tokenu ataku).
     if (m.hpRegenPct && !s.hasFlag(e, Flag.HasToken)) {
       s.hp[e] = Math.min(s.maxHp[e], s.hp[e] + s.maxHp[e] * m.hpRegenPct * dt);
+    }
+  }
+}
+
+/**
+ * Cechy z proceduralnego bestiariusza. Dwie mają stan, więc mieszkają tutaj,
+ * a nie w tabeli danych: furia przełącza się raz i na stałe, przyzywanie ma
+ * własny zegar.
+ */
+function applyGeneratedTraits(
+  world: World,
+  e: number,
+  def: NonNullable<World["enemyDefs"][number]>,
+  dt: number,
+): void {
+  const s = world.store;
+
+  // — Furia: poniżej progu HP rosną obrażenia i prędkość. Mnożniki nakładamy
+  //   RAZ, po czym zapalamy flagę — mnożenie co klatkę urwałoby walkę
+  //   w ułamku sekundy.
+  const rage = def.traits?.["enrage"] as
+    | { hpThreshold: number; damageMult: number; speedMult: number }
+    | undefined;
+  if (rage && !s.hasFlag(e, Flag.Enraged) && s.hp[e]! / s.maxHp[e]! <= rage.hpThreshold) {
+    s.setFlag(e, Flag.Enraged, true);
+    s.damage[e]! *= rage.damageMult;
+    s.speed[e]! *= rage.speedMult;
+    world.bus.emit("enemy:enraged", { entity: e, name: def.name, x: s.x[e]!, y: s.y[e]! });
+    world.bus.emit("sfx", { name: "alert", x: s.x[e]!, y: s.y[e]! });
+  }
+
+  // — Przyzywanie: co `interval` sekund boss dostawia sługi z aktualnej puli.
+  //   Zegar rusza dopiero w walce, żeby boss nie wszedł na arenę z gotową
+  //   świtą, zanim gracz go w ogóle zobaczy.
+  const summon = def.traits?.["summon"] as { interval: number; count: number } | undefined;
+  if (summon && s.state[e] !== EState.Patrol && s.state[e] !== EState.Idle) {
+    s.summonTimer[e]! += dt;
+    if (s.summonTimer[e]! >= summon.interval) {
+      s.summonTimer[e] = 0;
+      world.summonMinions(e, summon.count);
     }
   }
 }

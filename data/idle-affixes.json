@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "note": "Pula afiksów warstwy idle (v4 §4.6). Klucze `stat` MUSZĄ pokrywać się z polami IdleBonuses — inaczej afiks jest kosmetyką bez wpływu na DPS. Wartość końcowa: base · (1 + affixPerZone·z) · roll.",
+  "baseItems": {
+    "weapon": { "name": "Ostrze", "damage": 6 },
+    "helmet": { "name": "Hełm", "damage": 0 },
+    "chest": { "name": "Napierśnik", "damage": 0 },
+    "gloves": { "name": "Rękawice", "damage": 0 },
+    "boots": { "name": "Buty", "damage": 0 },
+    "belt": { "name": "Pas", "damage": 0 },
+    "amulet": { "name": "Amulet", "damage": 0 },
+    "ring1": { "name": "Pierścień", "damage": 0 },
+    "ring2": { "name": "Pierścień", "damage": 0 }
+  },
+  "prefixes": [
+    "Krwawy", "Rozżarzony", "Cichy", "Zmierzchowy", "Kuty", "Splamiony",
+    "Zimny", "Burzowy", "Chciwy", "Wygłodniały", "Popielny", "Wilczy"
+  ],
+  "suffixes": [
+    "Rzeźnika", "Wichru", "Kruka", "Głodu", "Świtu", "Zgliszcz",
+    "Łowcy", "Otchłani", "Kupca", "Nocy"
+  ],
+  "affixes": [
+    {
+      "id": "flat_dmg",
+      "label": "+{v} obrażeń",
+      "stat": "flatDamage",
+      "base": 4,
+      "pct": false,
+      "slots": ["weapon", "gloves", "ring1", "ring2"],
+      "weight": 12
+    },
+    {
+      "id": "flat_dmg_big",
+      "label": "+{v} obrażeń",
+      "stat": "flatDamage",
+      "base": 9,
+      "pct": false,
+      "slots": ["weapon", "amulet"],
+      "weight": 6
+    },
+    {
+      "id": "inc_dmg",
+      "label": "+{v}% obrażeń",
+      "stat": "increasedDamage",
+      "base": 0.06,
+      "pct": true,
+      "slots": ["weapon", "chest", "amulet", "ring1", "ring2"],
+      "weight": 12
+    },
+    {
+      "id": "inc_dmg_big",
+      "label": "+{v}% obrażeń",
+      "stat": "increasedDamage",
+      "base": 0.13,
+      "pct": true,
+      "slots": ["weapon", "amulet"],
+      "weight": 5
+    },
+    {
+      "id": "atk_speed",
+      "label": "+{v}% szybkości ataku",
+      "stat": "attackSpeed",
+      "base": 0.04,
+      "pct": true,
+      "slots": ["gloves", "boots", "weapon", "belt"],
+      "weight": 10
+    },
+    {
+      "id": "atk_speed_big",
+      "label": "+{v}% szybkości ataku",
+      "stat": "attackSpeed",
+      "base": 0.08,
+      "pct": true,
+      "slots": ["gloves", "weapon"],
+      "weight": 4
+    },
+    {
+      "id": "crit_chance",
+      "label": "+{v}% szansy na krytyk",
+      "stat": "critChance",
+      "base": 0.015,
+      "pct": true,
+      "slots": ["helmet", "gloves", "ring1", "ring2", "amulet"],
+      "weight": 9
+    },
+    {
+      "id": "crit_chance_big",
+      "label": "+{v}% szansy na krytyk",
+      "stat": "critChance",
+      "base": 0.03,
+      "pct": true,
+      "slots": ["ring1", "ring2"],
+      "weight": 3
+    },
+    {
+      "id": "crit_mult",
+      "label": "+{v}% obrażeń krytycznych",
+      "stat": "critMult",
+      "base": 0.12,
+      "pct": true,
+      "slots": ["weapon", "helmet", "amulet", "ring1", "ring2"],
+      "weight": 9
+    },
+    {
+      "id": "crit_mult_big",
+      "label": "+{v}% obrażeń krytycznych",
+      "stat": "critMult",
+      "base": 0.25,
+      "pct": true,
+      "slots": ["weapon", "amulet"],
+      "weight": 3
+    },
+    {
+      "id": "area_dmg",
+      "label": "+{v}% obrażeń obszarowych",
+      "stat": "areaDamage",
+      "base": 0.05,
+      "pct": true,
+      "slots": ["chest", "belt", "weapon", "boots"],
+      "weight": 9
+    },
+    {
+      "id": "area_dmg_big",
+      "label": "+{v}% obrażeń obszarowych",
+      "stat": "areaDamage",
+      "base": 0.11,
+      "pct": true,
+      "slots": ["chest", "belt"],
+      "weight": 3
+    },
+    {
+      "id": "gold_find",
+      "label": "+{v}% znaleźnego złota",
+      "stat": "goldFind",
+      "base": 0.08,
+      "pct": true,
+      "slots": ["belt", "boots", "amulet", "ring1", "ring2", "helmet"],
+      "weight": 11
+    },
+    {
+      "id": "gold_find_big",
+      "label": "+{v}% znaleźnego złota",
+      "stat": "goldFind",
+      "base": 0.17,
+      "pct": true,
+      "slots": ["belt", "amulet"],
+      "weight": 4
+    },
+    {
+      "id": "magic_find",
+      "label": "+{v}% znajdźki",
+      "stat": "magicFind",
+      "base": 0.05,
+      "pct": true,
+      "slots": ["helmet", "gloves", "ring1", "ring2", "belt"],
+      "weight": 7
+    },
+    {
+      "id": "magic_find_big",
+      "label": "+{v}% znajdźki",
+      "stat": "magicFind",
+      "base": 0.11,
+      "pct": true,
+      "slots": ["helmet", "amulet"],
+      "weight": 3
+    },
+    {
+      "id": "offline_eff",
+      "label": "+{v} pkt proc. efektywności offline",
+      "stat": "offlineEfficiency",
+      "base": 0.012,
+      "pct": true,
+      "slots": ["chest", "boots", "amulet"],
+      "weight": 5
+    },
+    {
+      "id": "offline_cap",
+      "label": "+{v} h limitu offline",
+      "stat": "offlineCapHours",
+      "base": 0.4,
+      "pct": false,
+      "slots": ["chest", "belt", "amulet"],
+      "weight": 4
+    }
+  ]
+}

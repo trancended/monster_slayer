@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.ts",
+    "idle": "node --disable-warning=ExperimentalWarning src/idle.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

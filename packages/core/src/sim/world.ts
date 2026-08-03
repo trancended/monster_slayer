@@ -8,6 +8,13 @@ import { SpatialHash } from "../core/spatial.ts";
 import { clamp, dist, inCone, TAU } from "../core/math.ts";
 import type { Balance, EnemyDef } from "../data/schema.ts";
 import {
+  generateBestiary,
+  traitLabels,
+  MAX_BOSS_TIERS,
+  UNLOCKS_PER_BOSS,
+  type Bestiary,
+} from "./enemygen.ts";
+import {
   createCharacter,
   deriveStats,
   xpToNext,
@@ -18,15 +25,30 @@ import type { Item } from "../domain/item.ts";
 import { EntityStore, EState, Flag, Kind, PState } from "./entities.ts";
 import { computeDamage, type AttackContext } from "./damage.ts";
 import { LootGenerator } from "./loot.ts";
+import { KillCombo } from "./combo.ts";
 import { updateEnemyAi } from "./ai.ts";
 
 export const ARENA_RADIUS = 19;
+
+/**
+ * Zasięg automatycznego zwracania się do wroga w trybie „kierunek ruchu".
+ * Nieco większy od najdłuższego zasięgu ataku gracza — postać ma się obracać
+ * do celu, zanim ten wejdzie w zasięg ciosu, a nie dopiero przy nim.
+ */
+const AUTO_FACE_RANGE = 6;
 
 export interface PlayerIntent {
   moveX: number;
   moveY: number;
   aimX: number;
   aimY: number;
+  /**
+   * Gracz nie prowadzi kursora — kierunek ma wynikać z ruchu, a w bezruchu
+   * z położenia najbliższego wroga. Ustawiane przez warstwę wejścia w trybie
+   * celowania „kierunek ruchu" (domyślnym, bo na trackpadzie prowadzenie
+   * kursora i chodzenie naraz jest niewykonalne).
+   */
+  autoFace: boolean;
   attackPressed: boolean;
   attackHeld: boolean;
   heavyPressed: boolean;
@@ -66,6 +88,8 @@ export class World {
   readonly bus: EventBus;
   readonly balance: Balance;
   readonly loot: LootGenerator;
+  /** Seria zabójstw — mnożnik złota i XP (patrz `combo.ts`). */
+  readonly killCombo: KillCombo;
 
   readonly player = 0;
   character: CharacterState;
@@ -93,6 +117,15 @@ export class World {
   readonly obstacles: Obstacle[] = [];
   readonly pickups = new Map<number, PickupPayload>();
   readonly enemyDefs: EnemyDef[];
+  /**
+   * Proceduralny bestiariusz doklejony za ręcznym rosterem. Generowany w całości
+   * przy starcie, bo `defIdx` encji to indeks w `enemyDefs` — tablica musi mieć
+   * ten sam kształt w każdej sesji, inaczej wczytany zapis wskazywałby na
+   * innego potwora.
+   */
+  readonly bestiary: Bestiary;
+  /** Indeks pierwszego wygenerowanego wpisu — wszystko przed nim jest ręczne. */
+  private readonly genOffset: number;
 
   encounter: EncounterState = {
     index: 0,
@@ -115,6 +148,7 @@ export class World {
     moveY: 0,
     aimX: 1,
     aimY: 0,
+    autoFace: false,
     attackPressed: false,
     attackHeld: false,
     heavyPressed: false,
@@ -128,7 +162,14 @@ export class World {
     this.bus = opts.bus;
     this.rng = new RngStreams(opts.seed);
     this.loot = new LootGenerator(opts.balance, this.rng.loot);
-    this.enemyDefs = opts.balance.enemies.roster;
+    this.killCombo = new KillCombo(opts.balance.combat.killCombo);
+    this.bestiary = generateBestiary(opts.seed);
+    this.genOffset = opts.balance.enemies.roster.length;
+    this.enemyDefs = [
+      ...opts.balance.enemies.roster,
+      ...this.bestiary.bosses,
+      ...this.bestiary.unlocks.flat(),
+    ];
     this.difficultyId = opts.difficulty ?? "hunter";
     this.character = createCharacter(opts.balance);
     this.derived = deriveStats(this.character, opts.balance);
@@ -225,7 +266,20 @@ export class World {
     this.updatePickups(dt);
     this.resolveCollisions();
     this.updateEncounter(dt);
+    this.updateCombo(dt);
     this.decayVisuals(dt);
+  }
+
+  /**
+   * Zegar serii. Odliczamy w `tick`, a nie w kliencie, bo od tego zależy
+   * wysokość nagrody — a nagrody liczy symulacja, nie warstwa prezentacji.
+   */
+  private updateCombo(dt: number): void {
+    const broken = this.killCombo.tick(dt);
+    if (broken > 0) {
+      this.bus.emit("combo:broken", { count: broken, best: this.killCombo.best });
+      this.bus.emit("sfx", { name: "comboBreak" });
+    }
   }
 
   private rebuildSpatial(): void {
@@ -328,8 +382,23 @@ export class World {
     if (this.dodgeCooldown > 0) this.dodgeCooldown -= dt;
 
     // — celowanie: kierunek do kursora (soft-lock kierunkowy)
-    const aimDx = this.intent.aimX - s.x[p];
-    const aimDy = this.intent.aimY - s.y[p];
+    let aimDx = this.intent.aimX - s.x[p];
+    let aimDy = this.intent.aimY - s.y[p];
+
+    // W trybie „kierunek ruchu" stojąca postać nie miałaby jak się obrócić —
+    // wróg za plecami wymagałby zrobienia kroku, żeby go w ogóle dosięgnąć.
+    // Dlatego w bezruchu przejmuje kierunek najbliższego wroga. To jedyne
+    // miejsce, w którym silnik celuje za gracza, i dotyczy wyłącznie OBROTU:
+    // decyzja o ataku, uniku i pozycji pozostaje po jego stronie.
+    const moving = this.intent.moveX * this.intent.moveX + this.intent.moveY * this.intent.moveY > 0.02;
+    if (this.intent.autoFace && !moving) {
+      const target = this.nearestEnemy(s.x[p], s.y[p], AUTO_FACE_RANGE);
+      if (target >= 0) {
+        aimDx = s.x[target] - s.x[p];
+        aimDy = s.y[target] - s.y[p];
+      }
+    }
+
     if (aimDx * aimDx + aimDy * aimDy > 0.01 && this.canRotate(s.state[p], s.stateTime[p])) {
       s.facing[p] = Math.atan2(aimDy, aimDx);
     }
@@ -759,6 +828,19 @@ export class World {
       return true;
     }
 
+    // — Cierniowy: część obrażeń wraca do gracza, ale tylko ze zwarcia.
+    //   Bez warunku odległości cecha karałaby też łuczników i buildy dystansowe,
+    //   które z definicji nie mają jak jej uniknąć.
+    const thorns = this.enemyDefs[s.defIdx[e]!]?.traits?.["thorns"] as
+      | { reflectPct: number; range: number }
+      | undefined;
+    if (thorns && !blocked) {
+      const p = this.player;
+      if (dist(s.x[e]!, s.y[e]!, s.x[p]!, s.y[p]!) <= thorns.range + s.radius[p]!) {
+        this.damagePlayer(amount * thorns.reflectPct, 0, "thorns", s.x[e]!, s.y[e]!);
+      }
+    }
+
     if (poiseDamage > 0) this.applyPoiseDamage(e, poiseDamage);
     return false;
   }
@@ -843,6 +925,16 @@ export class World {
     this.respawnTimer = 2.4;
     const lost = Math.floor(this.character.gold * this.balance.progression.death.goldLossPct);
     this.character.gold -= lost;
+
+    // Śmierć zrywa serię natychmiast, niezależnie od zegara. Bez tego combo
+    // byłoby darmowe: gracz mógłby zginąć w środku „Zagłady" i wrócić po
+    // odrodzeniu na tym samym mnożniku, czyli agresja przestałaby cokolwiek
+    // kosztować.
+    const brokenCombo = this.killCombo.reset();
+    if (brokenCombo > 0) {
+      this.bus.emit("combo:broken", { count: brokenCombo, best: this.killCombo.best });
+    }
+
     this.bus.emit("player:died", { room: `encounter_${this.encounter.index}` });
     this.bus.emit("sfx", { name: "death" });
   }
@@ -895,6 +987,28 @@ export class World {
     }
   }
 
+  /**
+   * Najbliższy żywy wróg w promieniu. Zwraca −1, gdy takiego nie ma.
+   * Liniowe przejście po encjach jest tu tańsze niż zapytanie do siatki
+   * przestrzennej: wywołujemy to raz na tick, a wrogów jest najwyżej kilkanaście.
+   */
+  private nearestEnemy(x: number, y: number, maxRange: number): number {
+    const s = this.store;
+    let best = -1;
+    let bestDist = maxRange * maxRange;
+    for (let i = 0; i < s.count; i++) {
+      if (!s.alive[i] || s.kind[i] !== Kind.Enemy) continue;
+      const dx = s.x[i] - x;
+      const dy = s.y[i] - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   private killEnemy(e: number): void {
     const s = this.store;
     const def = this.enemyDefs[s.defIdx[e]];
@@ -924,6 +1038,22 @@ export class World {
     // Pełzacz Zarazy eksploduje także po śmierci — presja na repozycję.
     if (def.attack.kind === "explode") this.explode(e, def, true);
 
+    // — combo: zabójstwo przedłuża serię i podnosi mnożnik nagród.
+    //   Liczymy je PRZED wypłatą, żeby to zabójstwo już z niego korzystało —
+    //   inaczej pierwszy cios każdego tieru byłby wart tyle, co poprzedniego.
+    const tierUp = this.killCombo.add();
+    const comboMult = this.killCombo.multiplier;
+    this.bus.emit("combo:changed", {
+      count: this.killCombo.kills,
+      tier: this.killCombo.tierIndex,
+      name: this.killCombo.tier?.name ?? "",
+      multiplier: comboMult,
+      tierUp,
+      x: s.x[e],
+      y: s.y[e],
+    });
+    if (tierUp) this.bus.emit("sfx", { name: "comboTier" });
+
     this.bus.emit("enemy:died", {
       entity: e,
       typeId: def.id,
@@ -935,15 +1065,18 @@ export class World {
     if (boss) {
       this.bus.emit("boss:died", { entity: e, name: def.name });
       this.bossEntity = -1;
+      this.unlockAfterBoss();
     }
     this.bus.emit("sfx", { name: boss ? "bossDeath" : "enemyDeath", x: s.x[e], y: s.y[e] });
 
-    this.grantXp(s.xpValue[e]);
+    // Mnożnik combo dotyczy XP i złota. Nie dotyka obrażeń — combo ma
+    // nagradzać tempo, a nie zastępować build (patrz `combo.ts`).
+    this.grantXp(Math.round(s.xpValue[e] * comboMult));
 
     const goldBonus = this.hasLegendary("signet_of_greed") ? 0.5 : 0;
     const drop = this.loot.rollDrop({
-      dropChance: def.dropChance,
-      goldValue: s.goldValue[e],
+      dropChance: def.dropChance + this.killCombo.dropChanceBonus,
+      goldValue: s.goldValue[e] * comboMult,
       itemLevel: this.encounter.zoneLevel,
       elite,
       boss,
@@ -1423,12 +1556,20 @@ export class World {
     const idxOf = (id: string) => roster.findIndex((d) => d.id === id);
 
     if (e.isMiniboss) {
-      const boss = idxOf("rot_knight");
+      // Każdy kolejny boss to inny wpis bestiariusza — inny zestaw ataków,
+      // inne atrybuty, inna sylwetka. Pierwszy boss nadal jest ręcznie
+      // strojonym Rycerzem Zgnilizny: pierwsze zderzenie z mechaniką bossa
+      // ma być przewidywalne dla twórcy, a dopiero potem robi się dziko.
+      const tier = Math.min(MAX_BOSS_TIERS, Math.ceil(e.index / 5));
+      const bossIdx = tier === 1 ? idxOf("rot_knight") : this.bossDefIdx(tier);
       const pos = this.edgePoint(rng.range(0, TAU));
-      this.spawnEnemy(boss, pos.x, pos.y, e.zoneLevel, false);
+      this.spawnEnemy(bossIdx, pos.x, pos.y, e.zoneLevel, false);
+
+      // Świta bossa to jednostki z aktualnej puli, nie wieczne gobliny.
+      const escort = this.spawnPool();
       for (let i = 0; i < 2; i++) {
         const p2 = this.edgePoint(rng.range(0, TAU));
-        this.spawnEnemy(idxOf("goblin_scout"), p2.x, p2.y, e.zoneLevel, false);
+        this.spawnEnemy(rng.pick(escort), p2.x, p2.y, e.zoneLevel, false);
       }
       this.bus.emit("wave:started", { wave: e.index, enemies: 3, elite: false });
       return;
@@ -1436,17 +1577,110 @@ export class World {
 
     // Budżet rośnie z numerem encounteru; twardy limit 24 wrogów (GDD §11.6).
     const budget = 3 + e.index * 1.7;
-    const tier = ((e.index - 1) % 3) as 0 | 1 | 2;
-    const pool: string[] =
+    const pool = this.spawnPool();
+
+    let spent = 0;
+    let spawned = 0;
+
+    while (spent < budget && spawned < this.balance.combat.limits.maxEnemies) {
+      const pick = rng.pick(pool);
+      const c = this.spawnCost(pick);
+      if (spent + c > budget + 1) break;
+      const pos = this.edgePoint(rng.range(0, TAU));
+      const isElite = e.isElite && spawned === 0;
+      this.spawnEnemy(pick, pos.x, pos.y, e.zoneLevel, isElite);
+      spent += c;
+      spawned++;
+    }
+
+    this.bus.emit("wave:started", { wave: e.index, enemies: spawned, elite: e.isElite });
+  }
+
+  /**
+   * Nagroda za bossa: do puli wchodzą nowe typy wrogów. Emitujemy ich nazwy,
+   * bo odblokowanie, którego gracz nie zauważy, nie jest nagrodą — a zobaczy je
+   * dopiero za kilka fal, gdy los wreszcie je wybierze.
+   */
+  private unlockAfterBoss(): void {
+    const tier = this.character.bossesDefeated + 1;
+    this.character.bossesDefeated = tier;
+    if (tier > MAX_BOSS_TIERS) return;
+
+    const batch = this.bestiary.unlocks[tier - 1] ?? [];
+    this.bus.emit("bestiary:unlocked", {
+      tier,
+      units: batch.map((d) => ({ name: d.name, traits: traitLabels(d.traits) })),
+      nextBoss: this.bestiary.bosses[tier]?.name ?? "",
+    });
+  }
+
+  /**
+   * Przyzwanie sług przez bossa (cecha `summon`). Sługi wchodzą **z krawędzi
+   * areny**, nie pod nogami gracza — przyzwanie ma zmusić do repozycji,
+   * a nie zadać obrażenia z niczego.
+   *
+   * Limit wrogów pilnuje `spawnEnemy`, więc boss w zatłoczonej arenie po prostu
+   * nie dostawi nic ponad limit.
+   */
+  summonMinions(summoner: number, count: number): void {
+    const pool = this.spawnPool();
+    if (pool.length === 0) return;
+    const s = this.store;
+
+    for (let i = 0; i < count; i++) {
+      const pos = this.edgePoint(this.rng.ai.range(0, TAU));
+      this.spawnEnemy(this.rng.ai.pick(pool), pos.x, pos.y, this.encounter.zoneLevel, false);
+    }
+    this.bus.emit("enemy:summoned", {
+      entity: summoner,
+      count,
+      x: s.x[summoner]!,
+      y: s.y[summoner]!,
+    });
+    this.bus.emit("sfx", { name: "alert", x: s.x[summoner]!, y: s.y[summoner]! });
+  }
+
+  /** Indeks bossa danego tieru w `enemyDefs`. Układ tablicy ustala konstruktor. */
+  private bossDefIdx(tier: number): number {
+    return this.genOffset + (Math.min(MAX_BOSS_TIERS, Math.max(1, tier)) - 1);
+  }
+
+  /**
+   * Pula typów do losowania fali: ręczny roster wg rytmu strefy **plus**
+   * wszystko, co odblokowały pokonane bossy. Pula rośnie, więc dwudziesta fala
+   * nie wygląda jak druga.
+   */
+  private spawnPool(): number[] {
+    const idxOf = (id: string) => this.enemyDefs.findIndex((d) => d.id === id);
+    const tier = ((this.encounter.index - 1) % 3) as 0 | 1 | 2;
+    const base =
       tier === 0
         ? ["goblin_scout", "goblin_scout", "goblin_thrower"]
         : tier === 1
           ? ["goblin_scout", "goblin_thrower", "skeleton_warrior", "plague_crawler"]
           : ["skeleton_warrior", "skeleton_archer", "orc_berserker", "orc_shaman", "plague_crawler"];
 
-    let spent = 0;
-    let spawned = 0;
-    const cost: Record<string, number> = {
+    const pool = base.map(idxOf).filter((i) => i >= 0);
+
+    // Odblokowane jednostki wchodzą z podwójną wagą względem startowych —
+    // nagroda za bossa ma być widoczna w następnej fali, nie statystycznie.
+    const unlockedBase = this.genOffset + MAX_BOSS_TIERS;
+    const unlockedCount = Math.min(this.character.bossesDefeated, MAX_BOSS_TIERS) * UNLOCKS_PER_BOSS;
+    for (let i = 0; i < unlockedCount; i++) {
+      pool.push(unlockedBase + i, unlockedBase + i);
+    }
+    return pool;
+  }
+
+  /**
+   * Koszt budżetowy typu. Dla wpisów ręcznych zostaje strojona tabela; dla
+   * generowanych liczymy go z HP i obrażeń, bo inaczej każda nowa jednostka
+   * wymagałaby ręcznego wpisu i fale rozjechałyby się co do trudności.
+   */
+  private spawnCost(defIdx: number): number {
+    const def = this.enemyDefs[defIdx];
+    if (!def) return 2;
+    const manual: Record<string, number> = {
       goblin_scout: 1,
       goblin_thrower: 1.3,
       skeleton_warrior: 2.2,
@@ -1455,19 +1689,11 @@ export class World {
       orc_berserker: 4,
       orc_shaman: 4.2,
     };
-
-    while (spent < budget && spawned < this.balance.combat.limits.maxEnemies) {
-      const pick = rng.pick(pool);
-      const c = cost[pick] ?? 2;
-      if (spent + c > budget + 1) break;
-      const pos = this.edgePoint(rng.range(0, TAU));
-      const isElite = e.isElite && spawned === 0;
-      this.spawnEnemy(idxOf(pick), pos.x, pos.y, e.zoneLevel, isElite);
-      spent += c;
-      spawned++;
-    }
-
-    this.bus.emit("wave:started", { wave: e.index, enemies: spawned, elite: e.isElite });
+    const fixed = manual[def.id];
+    if (fixed !== undefined) return fixed;
+    // Kalibracja na ręcznym rosterze: goblin (45 hp, 7 dmg) ≈ 1,
+    // ork berserker (160 hp, 22 dmg) ≈ 4.
+    return Math.max(1, (def.hp / 45 + def.damage / 7) / 2);
   }
 
   private edgePoint(angle: number): { x: number; y: number } {

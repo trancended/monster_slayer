@@ -1,0 +1,303 @@
+{
+  "version": 1,
+  "base": {
+    "damage": 5,
+    "attackSpeed": 1.2,
+    "critChance": 0.05,
+    "critChanceCap": 0.6,
+    "critMult": 1.5,
+    "areaDamage": 0.2,
+    "goldFind": 1,
+    "magicFind": 1,
+    "packSize": 8
+  },
+  "upgrades": [
+    {
+      "id": "damage",
+      "name": "Obrażenia",
+      "desc": "+2 obrażeń i ×1.03 mnożnika za poziom",
+      "c0": 10,
+      "r": 1.09,
+      "flat": 2,
+      "mult": 0.03,
+      "cap": 0,
+      "unlockZone": 1
+    },
+    {
+      "id": "attackSpeed",
+      "name": "Szybkość ataku",
+      "desc": "+1.5% ataków na sekundę",
+      "c0": 50,
+      "r": 1.12,
+      "flat": 0,
+      "mult": 0.015,
+      "cap": 0,
+      "unlockZone": 3
+    },
+    {
+      "id": "critChance",
+      "name": "Szansa na trafienie krytyczne",
+      "desc": "+0.25 pkt proc. szansy (limit 60%)",
+      "c0": 200,
+      "r": 1.14,
+      "flat": 0.0025,
+      "mult": 0,
+      "cap": 0.55,
+      "unlockZone": 6
+    },
+    {
+      "id": "critMult",
+      "name": "Mnożnik krytyczny",
+      "desc": "+3% obrażeń krytycznych",
+      "c0": 150,
+      "r": 1.11,
+      "flat": 0.03,
+      "mult": 0,
+      "cap": 0,
+      "unlockZone": 8
+    },
+    {
+      "id": "goldFind",
+      "name": "Znaleźne złoto",
+      "desc": "+2% złota z zabójstw",
+      "c0": 80,
+      "r": 1.1,
+      "flat": 0,
+      "mult": 0.02,
+      "cap": 0,
+      "unlockZone": 4
+    },
+    {
+      "id": "areaDamage",
+      "name": "Obrażenia obszarowe",
+      "desc": "+3% obrażeń przenoszonych na resztę pakietu",
+      "c0": 120,
+      "r": 1.13,
+      "flat": 0.03,
+      "mult": 0,
+      "cap": 3,
+      "unlockZone": 8
+    },
+    {
+      "id": "magicFind",
+      "name": "Znajdźka",
+      "desc": "+1.5% szansy na wyższą rzadkość",
+      "c0": 300,
+      "r": 1.15,
+      "flat": 0,
+      "mult": 0.015,
+      "cap": 0,
+      "unlockZone": 18
+    }
+  ],
+  "zones": {
+    "hp0": 160,
+    "polyExponent": 2.2,
+    "expBase": 1.16,
+    "killsPerZone": 10,
+    "bossEvery": 10,
+    "bossHpMult": 12,
+    "goldPerKill0": 3,
+    "goldPolyExponent": 2.5,
+    "goldExpBase": 1.16,
+    "bossGoldMult": 15,
+    "targetClearMin": 25,
+    "targetClearMax": 40,
+    "stuckSeconds": 90,
+    "maxZone": 10000,
+    "materialsPerZone": 0.35
+  },
+  "offline": {
+    "capHoursFree": 8,
+    "capHoursSupporter": 24,
+    "efficiencyFree": 0.55,
+    "efficiencySupporter": 0.85,
+    "minSecondsToShow": 120,
+    "backgroundEfficiency": 0.9,
+    "itemsPerHundredKills": 2.4
+  },
+  "prestige": {
+    "k": 20,
+    "t": 7200000000,
+    "multPerPoint": 0.02,
+    "unlockZone": 40,
+    "minPointsToReset": 1,
+    "ascension": {
+      "unlockPrestiges": 8,
+      "unlockLifetimePoints": 2500,
+      "sparkK": 3,
+      "sparkT": 400,
+      "multPerSpark": 0.15
+    }
+  },
+  "items": {
+    "affixPerZone": 0.08,
+    "rollMin": 0.7,
+    "rollMax": 1,
+    "dropChancePerKill": 0.08,
+    "bossDropCount": 3,
+    "rarities": [
+      {
+        "id": "common",
+        "name": "Zwykły",
+        "affixMin": 0,
+        "affixMax": 1,
+        "weight": 70,
+        "color": "#9aa3b2",
+        "valueMult": 1
+      },
+      {
+        "id": "magic",
+        "name": "Magiczny",
+        "affixMin": 2,
+        "affixMax": 2,
+        "weight": 22,
+        "color": "#4290ff",
+        "valueMult": 2.2
+      },
+      {
+        "id": "rare",
+        "name": "Rzadki",
+        "affixMin": 3,
+        "affixMax": 4,
+        "weight": 7,
+        "color": "#ffd447",
+        "valueMult": 5
+      },
+      {
+        "id": "epic",
+        "name": "Epicki",
+        "affixMin": 4,
+        "affixMax": 5,
+        "weight": 0.9,
+        "color": "#b96bff",
+        "valueMult": 12
+      },
+      {
+        "id": "unique",
+        "name": "Unikat",
+        "affixMin": 0,
+        "affixMax": 0,
+        "weight": 0.1,
+        "color": "#ff8c00",
+        "valueMult": 30
+      }
+    ]
+  },
+  "automation": [
+    {
+      "id": "autoAttack",
+      "name": "Auto-atak",
+      "desc": "Postać bije sama — możesz zamknąć kartę",
+      "unlockZone": 27,
+      "unlockPrestige": 0,
+      "eliminates": "klikanie ataku"
+    },
+    {
+      "id": "autoPickup",
+      "name": "Auto-podnoszenie",
+      "desc": "Łup wpada do plecaka sam",
+      "unlockZone": 30,
+      "unlockPrestige": 0,
+      "eliminates": "klikanie lootu"
+    },
+    {
+      "id": "autoSalvage",
+      "name": "Auto-rozbiórka",
+      "desc": "Filtr łupu rozbiera śmieci na materiały",
+      "unlockZone": 35,
+      "unlockPrestige": 0,
+      "eliminates": "zarządzanie plecakiem"
+    },
+    {
+      "id": "autoZone",
+      "name": "Auto-postęp strefy",
+      "desc": "Wejście do kolejnej strefy bez klikania",
+      "unlockZone": 37,
+      "unlockPrestige": 0,
+      "eliminates": "ręczne przechodzenie"
+    },
+    {
+      "id": "autoSkill",
+      "name": "Auto-umiejętności",
+      "desc": "Rotacja odpalana automatycznie",
+      "unlockZone": 0,
+      "unlockPrestige": 1,
+      "eliminates": "rotacja"
+    },
+    {
+      "id": "autoEquip",
+      "name": "Auto-ekwipunek",
+      "desc": "Zakładanie lepszych przedmiotów wg wag statów",
+      "unlockZone": 0,
+      "unlockPrestige": 2,
+      "eliminates": "porównywanie itemów"
+    },
+    {
+      "id": "autoPrestige",
+      "name": "Auto-prestiż",
+      "desc": "Reset po przekroczeniu progu PP",
+      "unlockZone": 0,
+      "unlockPrestige": 5,
+      "eliminates": "ręczny reset"
+    },
+    {
+      "id": "autoExpedition",
+      "name": "Auto-ekspedycje",
+      "desc": "Wysyłka po surowce w tle",
+      "unlockZone": 0,
+      "unlockPrestige": 12,
+      "eliminates": "mikrozarządzanie"
+    }
+  ],
+  "forge": {
+    "maxUpgradeLevel": 15,
+    "upgradeStatPerLevel": 0.06,
+    "upgradeGold0": 500,
+    "upgradeGoldR": 1.55,
+    "upgradeScrap0": 4,
+    "upgradeScrapR": 1.35,
+    "rerollAffixesFragments": 12,
+    "rerollValuesDust": 8,
+    "rerollCostGrowth": 1.12,
+    "transferEssence": 25,
+    "salvage": {
+      "common": {
+        "scrap": 2,
+        "fragment": 0,
+        "dust": 0,
+        "essence": 0
+      },
+      "magic": {
+        "scrap": 5,
+        "fragment": 1,
+        "dust": 1,
+        "essence": 0
+      },
+      "rare": {
+        "scrap": 12,
+        "fragment": 3,
+        "dust": 3,
+        "essence": 0
+      },
+      "epic": {
+        "scrap": 30,
+        "fragment": 9,
+        "dust": 8,
+        "essence": 1
+      },
+      "unique": {
+        "scrap": 60,
+        "fragment": 20,
+        "dust": 18,
+        "essence": 4
+      }
+    }
+  },
+  "supporter": {
+    "priceLabel": "49 zł",
+    "loadoutsFree": 1,
+    "loadoutsSupporter": 4,
+    "stashMultiplier": 2
+  }
+}

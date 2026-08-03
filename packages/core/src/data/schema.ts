@@ -32,6 +32,35 @@ export const DifficultySchema = z.object({
   aiAggression: z.number(),
 });
 
+/**
+ * Combo zabójstw — mnożnik nagród za utrzymanie tempa.
+ *
+ * Tiery są **progami zabójstw**, nie czasem: gracz ma widzieć, ile brakuje
+ * do awansu, a nie zgadywać. Okno kurczy się z każdym tierem, więc utrzymanie
+ * „Nieśmiertelnego" wymaga innej gry niż wejście w „Serię" — bez tego combo
+ * byłoby darmowym mnożnikiem dla każdego, kto po prostu długo gra.
+ */
+export const KillComboTierSchema = z.object({
+  /** Liczba zabójstw, od której tier obowiązuje. */
+  at: z.number().int().positive(),
+  name: z.string().min(1),
+  mult: z.number().min(1),
+  /** Kolor HUD-u — tier niesie też informację kolorem, ale nazwa jest wiodąca. */
+  color: z.string(),
+});
+
+export const KillComboSchema = z.object({
+  _note: z.string().optional(),
+  /** Sekundy na kolejne zabójstwo w tierze 0. */
+  window: z.number().positive(),
+  /** Zmiana okna na tier (ujemna = kurczy się). */
+  windowPerTier: z.number(),
+  windowMin: z.number().positive(),
+  /** Dodatek do szansy na łup za każdy tier — rośnie wolniej niż złoto. */
+  dropChanceBonusPerTier: z.number().min(0),
+  tiers: z.array(KillComboTierSchema).min(1),
+});
+
 export const CombatSchema = z.object({
   version: z.number(),
   player: z.object({
@@ -102,6 +131,7 @@ export const CombatSchema = z.object({
     maxProjectiles: z.number(),
     attackTokens: z.number(),
   }),
+  killCombo: KillComboSchema,
 });
 
 export const EnemyAttackSchema = z.object({
@@ -147,6 +177,34 @@ export const EnemyDefSchema = z.object({
   attack: EnemyAttackSchema,
   traits: z.record(z.string(), z.unknown()).default({}),
   dropChance: z.number(),
+  /**
+   * Zestaw ataku, z którego zbudowano bossa, wraz z jednozdaniową zapowiedzią
+   * taktyczną. Dwa zestawy mogą dzielić parę (rodzaj, kształt) — „szerokie
+   * cięcia" i „szybkie pchnięcia" to oba `combo` w stożku — więc bez tego pola
+   * nie da się stwierdzić, czy kolejni bossowie naprawdę się różnią.
+   */
+  kit: z.string().optional(),
+  tell: z.string().optional(),
+  /**
+   * Opis wyglądu dla warstwy graficznej. To **semantyka stworzenia**, nie
+   * szczegół renderowania: „krępy, rogaty, z dwuręcznym mieczem" mówi to samo
+   * w 2D, 3D i w opisie tekstowym. Klient tłumaczy to na bryły; rdzeń nadal
+   * nie wie, że istnieje jakikolwiek renderer.
+   *
+   * Ręczny roster go nie ma — tam wygląd jest wpisany w `PLANS` po stronie
+   * klienta. Pole wypełniają wyłącznie potwory generowane proceduralnie.
+   */
+  appearance: z
+    .object({
+      build: z.string(),
+      head: z.string(),
+      weapon: z.string(),
+      shield: z.boolean().optional(),
+      cape: z.boolean().optional(),
+      accent: z.number(),
+      scale: z.number().optional(),
+    })
+    .optional(),
 });
 
 export const EnemiesSchema = z.object({
@@ -281,3 +339,5 @@ export type AffixDef = z.infer<typeof AffixDefSchema>;
 export type ProgressionData = z.infer<typeof ProgressionSchema>;
 export type ComboStep = z.infer<typeof ComboStepSchema>;
 export type DifficultyDef = z.infer<typeof DifficultySchema>;
+export type KillComboData = z.infer<typeof KillComboSchema>;
+export type KillComboTier = z.infer<typeof KillComboTierSchema>;

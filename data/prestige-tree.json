@@ -1,0 +1,318 @@
+{
+  "version": 1,
+  "meta": {
+    "note": "Drzewko trwałe za PP (warstwa 1) i za Iskry (warstwa 2 — Ascensja). Warstwa 3 (Transcendencja) to rok 2 (v4 §4.4) — tu jej nie ma celowo, nie przez przeoczenie."
+  },
+  "nodes": [
+    {
+      "id": "pp_might",
+      "name": "Trwała Moc",
+      "desc": "+6% obrażeń za poziom",
+      "maxPoints": 10,
+      "cost": 1,
+      "requires": [],
+      "ring": 0,
+      "angle": 0,
+      "effects": { "increasedDamage": 0.06 }
+    },
+    {
+      "id": "pp_edge",
+      "name": "Naostrzone Ostrze",
+      "desc": "+3 obrażeń bazowych za poziom",
+      "maxPoints": 10,
+      "cost": 1,
+      "requires": ["pp_might"],
+      "ring": 1,
+      "angle": 20,
+      "effects": { "flatDamage": 3 }
+    },
+    {
+      "id": "pp_haste",
+      "name": "Pośpiech",
+      "desc": "+2% szybkości ataku za poziom",
+      "maxPoints": 10,
+      "cost": 1,
+      "requires": ["pp_might"],
+      "ring": 1,
+      "angle": 50,
+      "effects": { "attackSpeed": 0.02 }
+    },
+    {
+      "id": "pp_sweep",
+      "name": "Zamach",
+      "desc": "+4% obrażeń obszarowych za poziom",
+      "maxPoints": 10,
+      "cost": 1,
+      "requires": ["pp_might"],
+      "ring": 1,
+      "angle": 80,
+      "effects": { "areaDamage": 0.04 }
+    },
+    {
+      "id": "pp_precision",
+      "name": "Precyzja",
+      "desc": "+1 pkt proc. szansy na krytyk za poziom",
+      "maxPoints": 8,
+      "cost": 2,
+      "requires": ["pp_edge"],
+      "ring": 2,
+      "angle": 15,
+      "effects": { "critChance": 0.01 }
+    },
+    {
+      "id": "pp_savagery",
+      "name": "Okrucieństwo",
+      "desc": "+8% mnożnika krytycznego za poziom",
+      "maxPoints": 8,
+      "cost": 2,
+      "requires": ["pp_edge"],
+      "ring": 2,
+      "angle": 35,
+      "effects": { "critMult": 0.08 }
+    },
+    {
+      "id": "pp_cascade",
+      "name": "Kaskada",
+      "desc": "+6% obrażeń obszarowych za poziom",
+      "maxPoints": 8,
+      "cost": 2,
+      "requires": ["pp_sweep"],
+      "ring": 2,
+      "angle": 90,
+      "effects": { "areaDamage": 0.06 }
+    },
+    {
+      "id": "pp_greed",
+      "name": "Chciwość",
+      "desc": "+10% znaleźnego złota za poziom",
+      "maxPoints": 10,
+      "cost": 1,
+      "requires": [],
+      "ring": 0,
+      "angle": 180,
+      "effects": { "goldFind": 0.1 }
+    },
+    {
+      "id": "pp_scavenger",
+      "name": "Szperacz",
+      "desc": "+5% znajdźki za poziom",
+      "maxPoints": 8,
+      "cost": 2,
+      "requires": ["pp_greed"],
+      "ring": 1,
+      "angle": 200,
+      "effects": { "magicFind": 0.05 }
+    },
+    {
+      "id": "pp_vault",
+      "name": "Skarbiec",
+      "desc": "+18% znaleźnego złota za poziom",
+      "maxPoints": 6,
+      "cost": 3,
+      "requires": ["pp_scavenger"],
+      "ring": 2,
+      "angle": 210,
+      "effects": { "goldFind": 0.18 }
+    },
+    {
+      "id": "pp_dream",
+      "name": "Sen Wojownika",
+      "desc": "+1 h limitu offline za poziom",
+      "maxPoints": 8,
+      "cost": 2,
+      "requires": [],
+      "ring": 0,
+      "angle": 270,
+      "effects": { "offlineCapHours": 1 }
+    },
+    {
+      "id": "pp_diligence",
+      "name": "Sumienność",
+      "desc": "+3 pkt proc. efektywności offline za poziom",
+      "maxPoints": 10,
+      "cost": 2,
+      "requires": ["pp_dream"],
+      "ring": 1,
+      "angle": 290,
+      "effects": { "offlineEfficiency": 0.03 }
+    },
+    {
+      "id": "pp_nightwatch",
+      "name": "Nocna Warta",
+      "desc": "+2 h limitu offline i +2 pkt proc. efektywności za poziom",
+      "maxPoints": 5,
+      "cost": 4,
+      "requires": ["pp_diligence"],
+      "ring": 2,
+      "angle": 300,
+      "effects": { "offlineCapHours": 2, "offlineEfficiency": 0.02 }
+    },
+    {
+      "id": "pp_legacy",
+      "name": "Dziedzictwo",
+      "desc": "×1.25 obrażeń — multiplikatywnie",
+      "maxPoints": 3,
+      "cost": 6,
+      "requires": ["pp_precision", "pp_savagery"],
+      "ring": 3,
+      "angle": 25,
+      "effects": { "moreDamage": 0.25 }
+    },
+    {
+      "id": "pp_avalanche",
+      "name": "Lawina",
+      "desc": "×1.2 obrażeń i +10% obszarowych",
+      "maxPoints": 3,
+      "cost": 6,
+      "requires": ["pp_cascade"],
+      "ring": 3,
+      "angle": 95,
+      "effects": { "moreDamage": 0.2, "areaDamage": 0.1 }
+    },
+    {
+      "id": "pp_midas",
+      "name": "Dotyk Midasa",
+      "desc": "+50% znaleźnego złota i +15% znajdźki",
+      "maxPoints": 2,
+      "cost": 8,
+      "requires": ["pp_vault"],
+      "ring": 3,
+      "angle": 215,
+      "effects": { "goldFind": 0.5, "magicFind": 0.15 }
+    },
+    {
+      "id": "pp_momentum",
+      "name": "Rozpęd",
+      "desc": "+5% szybkości ataku i +5% obszarowych za poziom",
+      "maxPoints": 6,
+      "cost": 3,
+      "requires": ["pp_haste"],
+      "ring": 2,
+      "angle": 55,
+      "effects": { "attackSpeed": 0.05, "areaDamage": 0.05 }
+    },
+    {
+      "id": "pp_relentless",
+      "name": "Nieustępliwość",
+      "desc": "+12% obrażeń za poziom",
+      "maxPoints": 12,
+      "cost": 2,
+      "requires": ["pp_momentum"],
+      "ring": 3,
+      "angle": 60,
+      "effects": { "increasedDamage": 0.12 }
+    },
+    {
+      "id": "pp_hoard",
+      "name": "Zapasy",
+      "desc": "+8% znajdźki i +2 pkt proc. efektywności offline",
+      "maxPoints": 6,
+      "cost": 3,
+      "requires": ["pp_scavenger", "pp_diligence"],
+      "ring": 2,
+      "angle": 250,
+      "effects": { "magicFind": 0.08, "offlineEfficiency": 0.02 }
+    },
+    {
+      "id": "pp_apex",
+      "name": "Szczyt",
+      "desc": "×1.4 obrażeń. Wymaga trzech gałęzi — to jest cel na miesiąc.",
+      "maxPoints": 1,
+      "cost": 15,
+      "requires": ["pp_legacy", "pp_avalanche", "pp_midas"],
+      "ring": 4,
+      "angle": 120,
+      "effects": { "moreDamage": 0.4 }
+    }
+  ],
+  "ascension": [
+    {
+      "id": "asc_core",
+      "name": "Rdzeń Iskry",
+      "desc": "×1.5 obrażeń za poziom — multiplikatywnie",
+      "maxPoints": 5,
+      "cost": 1,
+      "requires": [],
+      "ring": 0,
+      "angle": 0,
+      "effects": { "moreDamage": 0.5 }
+    },
+    {
+      "id": "asc_flow",
+      "name": "Strumień",
+      "desc": "+25% znaleźnego złota za poziom",
+      "maxPoints": 5,
+      "cost": 1,
+      "requires": ["asc_core"],
+      "ring": 1,
+      "angle": 60,
+      "effects": { "goldFind": 0.25 }
+    },
+    {
+      "id": "asc_storm",
+      "name": "Burza",
+      "desc": "+20% obrażeń obszarowych za poziom — zdejmuje typowy sufit czyszczenia",
+      "maxPoints": 5,
+      "cost": 1,
+      "requires": ["asc_core"],
+      "ring": 1,
+      "angle": 120,
+      "effects": { "areaDamage": 0.2 }
+    },
+    {
+      "id": "asc_slumber",
+      "name": "Głęboki Sen",
+      "desc": "+4 h limitu offline i +5 pkt proc. efektywności za poziom",
+      "maxPoints": 4,
+      "cost": 2,
+      "requires": ["asc_core"],
+      "ring": 1,
+      "angle": 180,
+      "effects": { "offlineCapHours": 4, "offlineEfficiency": 0.05 }
+    },
+    {
+      "id": "asc_hunger",
+      "name": "Głód",
+      "desc": "+30% znajdźki za poziom",
+      "maxPoints": 4,
+      "cost": 2,
+      "requires": ["asc_flow"],
+      "ring": 2,
+      "angle": 70,
+      "effects": { "magicFind": 0.3 }
+    },
+    {
+      "id": "asc_edge",
+      "name": "Ostrze Iskry",
+      "desc": "+3 pkt proc. krytyka i +25% mnożnika krytycznego za poziom",
+      "maxPoints": 4,
+      "cost": 2,
+      "requires": ["asc_core"],
+      "ring": 2,
+      "angle": 20,
+      "effects": { "critChance": 0.03, "critMult": 0.25 }
+    },
+    {
+      "id": "asc_tempo",
+      "name": "Tempo",
+      "desc": "+10% szybkości ataku za poziom",
+      "maxPoints": 5,
+      "cost": 2,
+      "requires": ["asc_storm"],
+      "ring": 2,
+      "angle": 130,
+      "effects": { "attackSpeed": 0.1 }
+    },
+    {
+      "id": "asc_zenith",
+      "name": "Zenit",
+      "desc": "×2 obrażeń. Koniec warstwy 2 — dalej jest Transcendencja (rok 2).",
+      "maxPoints": 1,
+      "cost": 8,
+      "requires": ["asc_edge", "asc_tempo", "asc_hunger"],
+      "ring": 3,
+      "angle": 90,
+      "effects": { "moreDamage": 1 }
+    }
+  ]
+}

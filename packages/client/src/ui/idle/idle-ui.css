@@ -1,0 +1,471 @@
+/**
+ * Style warstwy idle. Nadbudowa nad `styles.css` — własne zmienne pod prefiksem
+ * `--idle-`, żeby nic tu nie kolidowało z HUD-em walki.
+ *
+ * Zasada: wszystko skaluje się z `--ui-scale` (GDD §10.3), zero webfontów,
+ * zero zależności zewnętrznych.
+ */
+
+:root {
+  --idle-gold: #ffc94a;
+  --idle-dps: #ff8a5c;
+  --idle-zone: #7fd8ff;
+  --idle-warn: #ffb454;
+  --idle-good: #4fd18b;
+  --idle-row: rgba(255, 255, 255, 0.04);
+  --idle-row-hover: rgba(127, 216, 255, 0.09);
+
+  --idle-common: #9aa3b2;
+  --idle-magic: #4290ff;
+  --idle-rare: #ffd447;
+  --idle-epic: #b96bff;
+  --idle-unique: #ff8c00;
+}
+
+/* ── wspólne rusztowanie ekranów pełnoekranowych ─────────────────────── */
+
+.idle-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 3vmin;
+  background: rgba(6, 8, 12, 0.86);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+  overflow: auto;
+}
+
+.idle-card {
+  width: min(560px, 100%);
+  background: var(--panel-solid);
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  padding: 1.5em 1.6em;
+}
+
+.idle-card h1 {
+  margin: 0 0 0.15em;
+  font-size: 1.45em;
+  letter-spacing: 0.01em;
+}
+
+.idle-card h2 {
+  margin: 1.1em 0 0.5em;
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.idle-sub {
+  margin: 0 0 1.2em;
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+/* ── wiersz „ikona — etykieta — wartość" ─────────────────────────────── */
+
+.idle-stats {
+  display: grid;
+  gap: 0.35em;
+  margin: 0;
+}
+
+.idle-stat {
+  display: grid;
+  grid-template-columns: 1.6em 1fr auto;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.5em 0.7em;
+  border-radius: 9px;
+  background: var(--idle-row);
+}
+
+.idle-stat .icon {
+  font-size: 1.05em;
+  text-align: center;
+  /* Emoji niesie tu tylko dekorację — informację niesie tekst etykiety. */
+  opacity: 0.9;
+}
+
+.idle-stat .label {
+  color: var(--muted);
+}
+
+.idle-stat .value {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.05em;
+}
+
+.idle-stat .value.gold {
+  color: var(--idle-gold);
+}
+.idle-stat .value.zone {
+  color: var(--idle-zone);
+}
+.idle-stat .value.dps {
+  color: var(--idle-dps);
+}
+
+/* ── blok diagnozy ───────────────────────────────────────────────────── */
+
+.idle-diagnosis {
+  margin-top: 1.1em;
+  padding: 0.85em 1em;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 180, 84, 0.4);
+  background: rgba(255, 180, 84, 0.09);
+}
+
+.idle-diagnosis .head {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-weight: 700;
+  color: var(--idle-warn);
+  margin-bottom: 0.3em;
+}
+
+.idle-diagnosis p {
+  margin: 0 0 0.6em;
+  color: var(--text);
+  font-size: 0.95em;
+  line-height: 1.45;
+}
+
+.idle-diagnosis.calm {
+  border-color: rgba(79, 209, 139, 0.35);
+  background: rgba(79, 209, 139, 0.08);
+}
+
+.idle-diagnosis.calm .head {
+  color: var(--idle-good);
+}
+
+/* ── stopka z akcją ──────────────────────────────────────────────────── */
+
+.idle-actions {
+  display: flex;
+  gap: 0.6em;
+  margin-top: 1.3em;
+}
+
+.idle-actions button {
+  flex: 1;
+  padding: 0.8em 1em;
+  font-size: 1.02em;
+}
+
+.idle-note {
+  margin-top: 0.9em;
+  font-size: 0.82em;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── ekran postaci: siatka pod screenshot 1200 px (v4 §5.8) ──────────── */
+
+.sheet {
+  width: min(1200px, 100%);
+  background: var(--panel-solid);
+  border: 1px solid var(--edge);
+  border-radius: 16px;
+  padding: 1.4em 1.6em 1.6em;
+  display: grid;
+  gap: 1.2em;
+}
+
+.sheet-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1em;
+  align-items: start;
+  border-bottom: 1px solid var(--edge);
+  padding-bottom: 1em;
+}
+
+.sheet-title input {
+  font: inherit;
+  font-size: 1.6em;
+  font-weight: 700;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 0.1em 0.3em;
+  width: 100%;
+  max-width: 20ch;
+}
+
+.sheet-title input:hover,
+.sheet-title input:focus {
+  border-color: var(--edge);
+  outline: none;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.sheet-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45em;
+  margin-top: 0.5em;
+}
+
+.tag {
+  font-size: 0.8em;
+  padding: 0.25em 0.65em;
+  border-radius: 999px;
+  border: 1px solid var(--edge);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+}
+
+.tag.key {
+  border-color: rgba(185, 107, 255, 0.55);
+  background: rgba(185, 107, 255, 0.14);
+  color: #d9b6ff;
+  font-weight: 700;
+}
+
+.sheet-dps {
+  text-align: right;
+}
+
+.sheet-dps .n {
+  display: block;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 2.6em;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--idle-dps);
+}
+
+.sheet-dps .k {
+  font-size: 0.78em;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+
+.sheet-body {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 1.4em;
+}
+
+@media (max-width: 780px) {
+  .sheet-body {
+    grid-template-columns: 1fr;
+  }
+  .sheet-head {
+    grid-template-columns: 1fr;
+  }
+  .sheet-dps {
+    text-align: left;
+  }
+}
+
+/* ── sloty ekwipunku ─────────────────────────────────────────────────── */
+
+.slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5em;
+}
+
+.slot {
+  border: 1px solid var(--edge);
+  border-left-width: 4px;
+  border-radius: 9px;
+  padding: 0.55em 0.7em;
+  background: var(--idle-row);
+  min-height: 4.2em;
+}
+
+.slot .s-name {
+  font-size: 0.72em;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.slot .s-item {
+  font-weight: 600;
+  font-size: 0.92em;
+  line-height: 1.25;
+  margin-top: 0.15em;
+  overflow-wrap: anywhere;
+}
+
+.slot .s-meta {
+  font-size: 0.78em;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-top: 0.2em;
+}
+
+.slot.empty .s-item {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* Rzadkość niesiona kolorem ORAZ znakiem — wymóg dostępności (GDD §10.3). */
+.slot[data-rarity="common"] {
+  border-left-color: var(--idle-common);
+}
+.slot[data-rarity="magic"] {
+  border-left-color: var(--idle-magic);
+}
+.slot[data-rarity="rare"] {
+  border-left-color: var(--idle-rare);
+}
+.slot[data-rarity="epic"] {
+  border-left-color: var(--idle-epic);
+}
+.slot[data-rarity="unique"] {
+  border-left-color: var(--idle-unique);
+}
+
+.r-mark {
+  font-family: var(--mono);
+  font-weight: 700;
+  margin-right: 0.35em;
+}
+
+/* ── tabela statystyk ────────────────────────────────────────────────── */
+
+.kv {
+  display: grid;
+  gap: 0.15em;
+}
+
+.kv .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  padding: 0.35em 0.6em;
+  border-radius: 7px;
+  font-size: 0.92em;
+}
+
+.kv .row:nth-child(odd) {
+  background: var(--idle-row);
+}
+
+.kv .row b {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* ── kod builda ──────────────────────────────────────────────────────── */
+
+.buildcode {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5em;
+  align-items: center;
+  padding: 0.6em 0.75em;
+  border-radius: 10px;
+  border: 1px dashed var(--edge);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.buildcode code {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buildcode input {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 0.8em;
+  width: 100%;
+  color: var(--text);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--edge);
+  border-radius: 7px;
+  padding: 0.45em 0.6em;
+}
+
+/* ── panel idle (ulepszenia, strefa, automatyzacje) ──────────────────── */
+
+.idle-panel {
+  width: min(920px, 100%);
+  display: grid;
+  gap: 1em;
+}
+
+.upgrade {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 0.6em;
+  align-items: center;
+  padding: 0.6em 0.8em;
+  border-radius: 10px;
+  background: var(--idle-row);
+  border: 1px solid transparent;
+}
+
+.upgrade:hover {
+  background: var(--idle-row-hover);
+}
+
+.upgrade.locked {
+  opacity: 0.45;
+}
+
+.upgrade .u-name {
+  font-weight: 600;
+}
+
+.upgrade .u-desc {
+  font-size: 0.82em;
+  color: var(--muted);
+}
+
+.upgrade button {
+  min-width: 8.5em;
+  font-size: 0.86em;
+  padding: 0.5em 0.7em;
+}
+
+.upgrade button .c {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--idle-gold);
+}
+
+.zone-bar {
+  height: 0.75em;
+  margin-top: 0.4em;
+}
+
+.zone-bar > i {
+  background: linear-gradient(90deg, #2f7fa8, var(--idle-zone));
+}
+
+.zone-bar.boss > i {
+  background: linear-gradient(90deg, #a8302f, #ff7a5c);
+}
+
+/* ── liczniki animowane ──────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .idle-stat .value,
+  .sheet-dps .n {
+    transition: none !important;
+  }
+}

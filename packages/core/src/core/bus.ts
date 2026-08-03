@@ -23,6 +23,31 @@ export interface GameEvents {
   "boss:spawned": { entity: number; name: string; hp: number; breakBar: number };
   "boss:broken": { entity: number; window: number };
   "boss:died": { entity: number; name: string };
+  /** Wróg przekroczył próg furii — HUD i dźwięk mają to zapowiedzieć. */
+  "enemy:enraged": { entity: number; name: string; x: number; y: number };
+  /** Boss z cechą „Przyzywacz" dostawił sługi na krawędzi areny. */
+  "enemy:summoned": { entity: number; count: number; x: number; y: number };
+  /**
+   * Pokonanie bossa dołożyło do puli nowe typy wrogów. `units` to ich nazwy
+   * wraz z atrybutami — HUD ma czym pokazać, co gracz właśnie odblokował.
+   */
+  "bestiary:unlocked": {
+    tier: number;
+    units: { name: string; traits: string[] }[];
+    nextBoss: string;
+  };
+  /** Seria zabójstw urosła. `tierUp` zapala się tylko przy awansie progu. */
+  "combo:changed": {
+    count: number;
+    tier: number;
+    name: string;
+    multiplier: number;
+    tierUp: boolean;
+    x: number;
+    y: number;
+  };
+  /** Okno się zamknęło albo gracz zginął. `count` to zerwana seria. */
+  "combo:broken": { count: number; best: number };
   "wave:cleared": { wave: number; nextIn: number };
   "wave:started": { wave: number; enemies: number; elite: boolean };
   "hitstop": { seconds: number; slowMoScale: number; slowMoDuration: number };

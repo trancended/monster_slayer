@@ -8,15 +8,19 @@ import {
   FIXED_DT,
   Kind,
   PState,
+  traitLabels,
   World,
   xpToNext,
   type Balance,
   type Item,
 } from "@ms/core";
 import { FixedLoop } from "./loop.ts";
-import { Renderer } from "./render/renderer.ts";
+// Silnik graficzny: Babylon.js 9 (3D). `Renderer3d` ma **identyczne API** co
+// poprzedni renderer PixiJS, więc podmiana silnika to jeden import — cała
+// logika gry w `packages/core` i reszta klienta o niej nie wie.
+import { Renderer3d as Renderer } from "./render3d/renderer3d.ts";
 import { InputManager } from "./input/input.ts";
-import { audio } from "./audio/audio.ts";
+import { audio, type HitMaterial } from "./audio/audio.ts";
 import { hud, pushToast } from "./ui/state.svelte.ts";
 import {
   DEFAULT_SETTINGS,
@@ -36,6 +40,20 @@ import {
   status as netStatus,
   syncSave,
 } from "./net/backend.ts";
+import { IdleController } from "./idle/controller.ts";
+import type { idle as idleNs } from "@ms/core";
+
+/**
+ * Z czego zbudowany jest wróg — decyduje o ogonie dźwięku uderzenia.
+ * Szkielety brzmią kością, rycerz pancerzem, pełzacz jadem, reszta ciałem.
+ */
+function hitMaterial(enemyId: string | undefined): HitMaterial {
+  if (!enemyId) return "flesh";
+  if (enemyId.startsWith("skeleton")) return "bone";
+  if (enemyId === "rot_knight") return "metal";
+  if (enemyId === "plague_crawler") return "toxic";
+  return "flesh";
+}
 
 // `pagehide` nie zdąży dokończyć asynchronicznego zapisu do IndexedDB, więc
 // autosave musi być na tyle gęsty, żeby F5 nie gubił postępu (DoD §18.5).
@@ -49,10 +67,26 @@ export class Game {
   input!: InputManager;
   loop!: FixedLoop;
 
+  /**
+   * Warstwa idle (plan v4). Osobny obiekt, a nie pola w `World`, bo jej zegar
+   * to zegar gracza, nie zegar walki: nie zna hitstopu, slow-mo ani pauzy.
+   */
+  idle: IdleController | null = null;
+
+  /** Kod builda przeliczany przy otwarciu ekranu postaci, nie co klatkę. */
+  buildCode = "";
+
+  /** Silnik audio — wystawiony, żeby dało się zmierzyć dźwięki w testach. */
+  get audio(): typeof audio {
+    return audio;
+  }
+
   private aim = { x: 3, y: 0 };
   private hudTick = 0;
   private autosaveTimer = 0;
   private prevHitDone = 0;
+  /** Ustawiane przez `enemy:damaged`, konsumowane przy rysowaniu zamachu. */
+  private critThisSwing = false;
   private lowHp = false;
   private started = false;
 
@@ -80,11 +114,15 @@ export class Game {
     }
 
     this.renderer = new Renderer();
+    // Tryb kamery musi być znany PRZED budową sceny: perspektywa i rzut
+    // równoległy to różne kamery, a nie przełącznik na gotowej.
+    this.renderer.cameraMode = settings.cameraMode;
     await this.renderer.init(stageEl, this.balance.combat.gameFeel);
 
     this.input = new InputManager(stageEl, {
       onMenuToggle: () => this.toggleMenu(),
       onInventoryToggle: () => this.toggleInventory(),
+      onIdleToggle: () => this.toggleIdlePanel(),
       onGamepadDetected: () => {
         hud.gamepad = true;
         pushToast("Wykryto pada — sterowanie XInput aktywne", "info");
@@ -97,9 +135,17 @@ export class Game {
       (alpha, realDt) => this.render(alpha, realDt),
     );
 
+    // Warstwa idle startuje przed pierwszą klatką — ekran powrotu musi się
+    // pojawić zanim gracz zobaczy arenę, bo inaczej przestaje być powodem
+    // do wrócenia i staje się przerywnikiem (v4 §2.2).
+    this.idle = new IdleController(save?.idle);
+    const hasReport = this.idle.begin();
+
     this.applySettings(settings);
     this.wireEvents();
     this.syncHud(true);
+
+    if (hasReport) hud.screen = "return";
 
     // Hot reload balansu: systemy czytają nowe wartości od następnego ticku.
     connectBalanceLive((balance) => {
@@ -116,6 +162,34 @@ export class Game {
   private wireEvents(): void {
     bus.on("enemy:damaged", (e) => {
       this.renderer.spawnDamageNumber(e.amount, e.x, e.y, e.crit, e.element);
+
+      // Kierunek rozprysku: od gracza w stronę celu. Krew ma lecieć „przez"
+      // wroga zgodnie z ciosem, a nie w losową stronę — inaczej efekt czyta się
+      // jak eksplozja, a nie jak cięcie.
+      const s = this.world.store;
+      const p = this.world.player;
+      const angle = Math.atan2(e.y - s.y[p]!, e.x - s.x[p]!);
+      // Siłę rozprysku bierzemy z udziału ciosu w puli HP celu — dzięki temu
+      // dobicie wygląda mocniej niż draśnięcie, bez osobnego pola w zdarzeniu.
+      const maxHp = Math.max(1, s.maxHp[e.entity] ?? 1);
+      const power = 0.35 + Math.min(1, e.amount / maxHp) * 0.9;
+      this.renderer.spawnHitFx(e.x, e.y, angle, e.crit, power);
+      if (e.crit) this.critThisSwing = true;
+
+      // Dźwięk trafienia zna materiał celu — kość brzmi inaczej niż pancerz.
+      // Rdzeń emituje tylko generyczne `hit`, bo nie ma pojęcia o warstwie audio;
+      // wzbogacenie robi klient, tam gdzie i tak trzyma definicje wrogów.
+      audio.hit({
+        material: hitMaterial(this.balance.enemies.roster[s.defIdx[e.entity]!]?.id),
+        power,
+        crit: e.crit,
+        at: { x: e.x, y: e.y },
+      });
+    });
+
+    bus.on("enemy:died", (e) => {
+      const def = this.balance.enemies.roster.find((d) => d.id === e.typeId);
+      this.renderer.spawnDeathFx(e.x, e.y, def?.color ?? 0xcccccc, e.elite);
     });
 
     bus.on("player:healed", (e) => {
@@ -138,7 +212,7 @@ export class Game {
       );
     });
 
-    bus.on("sfx", (e) => audio.play(e.name));
+    bus.on("sfx", (e) => audio.play(e.name, e.x !== undefined ? { x: e.x, y: e.y ?? 0 } : undefined));
 
     bus.on("level:up", (e) => {
       pushToast(`Poziom ${e.level}! +3 punkty atrybutów`, "level");
@@ -169,6 +243,53 @@ export class Game {
       void this.save();
     });
 
+    // Most walka → idle. Klient raportuje FAKT zabicia, nie wynik ekonomiczny;
+    // złoto, strefę i drop liczy warstwa idle z własnych formuł (v4 §7.3).
+    //
+    // Try/catch nie jest tu ostrożnością na wyrost: `bus.emit` woła słuchaczy
+    // synchronicznie ze środka `world.tick()`, więc wyjątek w warstwie idle
+    // przerwałby resztę klatki symulacji — gracz straciłby kontrolę nad postacią
+    // przez błąd w liczeniu złota. Warstwy mają się nie przewracać nawzajem.
+    bus.on("enemy:died", (e) => {
+      try {
+        // Mnożnik combo dotyczy też ekonomii idle — inaczej seria opłacałaby się
+        // w warstwie walki, a w warstwie idle byłaby niewidoczna.
+        this.idle?.reportKill(e.typeId, 1, this.world.killCombo.multiplier);
+      } catch (err) {
+        console.error("[idle] błąd przy raportowaniu zabójstwa", err);
+      }
+    });
+
+    // ── combo zabójstw ────────────────────────────────────────────────────
+    bus.on("combo:changed", (e) => {
+      hud.comboCount = e.count;
+      hud.comboTier = e.tier;
+      hud.comboName = e.name;
+      hud.comboMultiplier = e.multiplier;
+      hud.comboColor = this.balance.combat.killCombo.tiers[e.tier]?.color ?? "#9aa3b2";
+
+      if (e.tierUp) {
+        // Awans tieru to jedyny moment wart przerwania uwagi — rozbłysk nad
+        // miejscem zabójstwa plus toast z nazwą i mnożnikiem.
+        const color = Number.parseInt(hud.comboColor.slice(1), 16);
+        this.renderer.spawnComboBurst(e.x, e.y, Number.isFinite(color) ? color : 0xffffff);
+        pushToast(`${e.name} ×${e.multiplier.toFixed(2).replace(/\.?0+$/, "")}`, "level");
+      }
+    });
+
+    bus.on("combo:broken", (e) => {
+      hud.comboCount = 0;
+      hud.comboTier = -1;
+      hud.comboName = "";
+      hud.comboMultiplier = 1;
+      hud.comboBest = e.best;
+      // Zerwanie serii ≥ pierwszego tieru zasługuje na informację; krótkie
+      // serie zrywają się bez przerwy i komunikat byłby szumem.
+      if (e.count >= (this.balance.combat.killCombo.tiers[0]?.at ?? 3)) {
+        pushToast(`Seria zerwana — ${e.count} zabójstw`, "info");
+      }
+    });
+
     bus.on("boss:spawned", (e) => {
       hud.bossName = e.name;
       hud.bossMaxHp = e.hp;
@@ -176,6 +297,26 @@ export class Game {
       hud.bossBreakMax = e.breakBar;
       hud.bossBreak = e.breakBar;
       audio.setMood("boss");
+
+      // Każdy boss jest inny, więc gracz nie ma skąd wiedzieć, czego się
+      // spodziewać. Zapowiedź ataku i lista atrybutów zastępują wiedzę,
+      // którą przy jednym, stałym bossie dawało po prostu powtórzenie walki.
+      const def = this.world.enemyDefs.find((d) => d.name === e.name && d.isBoss);
+      if (def?.tell) pushToast(`${e.name}: ${def.tell}`, "info");
+      const cechy = def ? traitLabels(def.traits) : [];
+      if (cechy.length > 0) pushToast(`Atrybuty: ${cechy.join(", ")}`, "info");
+    });
+
+    bus.on("bestiary:unlocked", (e) => {
+      for (const u of e.units) {
+        const opis = u.traits.length > 0 ? ` (${u.traits.join(", ")})` : "";
+        pushToast(`Nowy wróg: ${u.name}${opis}`, "level");
+      }
+      if (e.nextBoss) pushToast(`Następny boss: ${e.nextBoss}`, "info");
+    });
+
+    bus.on("enemy:enraged", (e) => {
+      pushToast(`${e.name} wpada w furię!`, "info");
     });
 
     bus.on("boss:broken", () => {
@@ -207,7 +348,11 @@ export class Game {
 
   private tick(dt: number): void {
     if (hud.screen !== "playing") return;
-    this.input.writeIntent(this.world.intent, this.aim);
+    const s = this.world.store;
+    const p = this.world.player;
+    // Kąt kamery zmienia znaczenie WASD, więc warstwa wejścia musi go znać.
+    this.input.viewYaw = this.renderer.viewYaw;
+    this.input.writeIntent(this.world.intent, this.aim, { x: s.x[p]!, y: s.y[p]! });
     this.world.tick(dt);
 
     this.autosaveTimer += dt;
@@ -218,10 +363,26 @@ export class Game {
   }
 
   private render(alpha: number, realDt: number): void {
+    // Warstwa idle tyka czasem rzeczywistym i **poza** pauzą pętli walki:
+    // gra idle nie może zatrzymać się dlatego, że gracz otworzył menu.
+    // `document.hidden` przełącza ją w tryb tła (v4 §5.1).
+    try {
+      this.idle?.update(realDt, document.hidden, Date.now());
+    } catch (err) {
+      console.error("[idle] błąd ticku warstwy idle", err);
+    }
+
     // Utrata fokusu → automatyczna pauza + wyciszenie (GDD §4.2).
     if (this.input.focusLost) {
       this.input.focusLost = false;
       if (hud.screen === "playing") this.toggleMenu();
+    }
+
+    // Słuchacz siedzi na graczu — panorama i tłumienie liczą się względem niego.
+    {
+      const s = this.world.store;
+      const p = this.world.player;
+      audio.setListener(s.x[p]!, s.y[p]!);
     }
 
     this.renderer.screenToWorldPoint(this.input.mouseX, this.input.mouseY, this.aim);
@@ -242,7 +403,11 @@ export class Game {
         (step.arcDeg * Math.PI) / 180,
         step.range,
         state === PState.Heavy,
+        // Krytyk zapala się w `enemy:damaged`, który leci w tej samej klatce
+        // co trafienie — flaga jest więc już ustawiona, gdy rysujemy zamach.
+        this.critThisSwing,
       );
+      this.critThisSwing = false;
     }
     this.prevHitDone = hitDone;
 
@@ -278,6 +443,18 @@ export class Game {
     hud.intermission = w.encounter.active ? 0 : Math.max(0, w.encounter.intermission);
     hud.heavyCharge = s.state[w.player] === PState.HeavyCharge ? w.heavyChargeRatio : 0;
     hud.comboIndex = w.comboIndex;
+
+    // Zegar serii czytamy co klatkę HUD-u, a nie ze zdarzenia: pasek ma
+    // odliczać płynnie, a `combo:changed` leci tylko przy zabójstwie.
+    const combo = w.killCombo.snapshot();
+    hud.comboCount = combo.count;
+    hud.comboTier = combo.tier;
+    hud.comboName = combo.name;
+    hud.comboMultiplier = combo.multiplier;
+    hud.comboColor = combo.color;
+    hud.comboFraction = combo.fraction;
+    hud.comboBest = combo.best;
+    hud.comboToNext = combo.toNextTier;
     hud.fps = this.loop.stats.fps;
     hud.simMs = this.loop.stats.simMs;
     hud.gamepad = this.input.gamepadIndex !== null;
@@ -317,6 +494,58 @@ export class Game {
     }
     hud.screen = "playing";
     this.loop.setPaused(false);
+  }
+
+  // ───────────────────────────────────────────────────────── warstwa idle
+
+  /** Kliknięcie ODBIERZ na ekranie powrotu — jedyne wyjście z tego ekranu. */
+  claimOffline(): void {
+    this.idle?.claimOffline();
+    this.idle?.setPanelVisible(false);
+    hud.screen = "playing";
+    this.loop.setPaused(false);
+    void this.save();
+  }
+
+  /**
+   * Jedna sugerowana akcja z ekranu powrotu (v4 §2.2, punkt 3): przycisk
+   * prowadzi do decyzji, a nie do menu. Dlatego najpierw wykonujemy akcję,
+   * a dopiero potem pokazujemy panel — gracz widzi skutek, nie listę opcji.
+   */
+  followSuggestion(action: idleNs.SuggestedAction): void {
+    this.idle?.claimOffline();
+    this.idle?.followSuggestion(action);
+    hud.screen = action.kind === "equip" ? "inventory" : "idle";
+    this.loop.setPaused(true);
+    void this.save();
+  }
+
+  openIdlePanel(): void {
+    hud.screen = "idle";
+    this.idle?.setPanelVisible(true);
+    this.loop.setPaused(true);
+    this.input.clearHeld();
+  }
+
+  /** Ekran powrotu jest nieprzerywalny — dopóki wisi, klawisz G nic nie robi. */
+  toggleIdlePanel(): void {
+    if (hud.screen === "return") return;
+    if (hud.screen === "idle" || hud.screen === "sheet") {
+      this.idle?.setPanelVisible(false);
+      hud.screen = "playing";
+      this.loop.setPaused(false);
+      this.input.clearHeld();
+      return;
+    }
+    this.openIdlePanel();
+  }
+
+  openCharacterSheet(): void {
+    if (this.idle) this.buildCode = this.idle.buildCode();
+    this.idle?.setPanelVisible(true);
+    hud.screen = "sheet";
+    this.loop.setPaused(true);
+    this.input.clearHeld();
   }
 
   toggleMenu(): void {
@@ -361,6 +590,10 @@ export class Game {
   }
 
   resume(): void {
+    // Z ekranu powrotu nie wychodzi się „wróć do gry" — nagroda musi zostać
+    // odebrana świadomie, inaczej gracz nie dowie się, że offline coś dał.
+    if (hud.screen === "return") return;
+    this.idle?.setPanelVisible(false);
     hud.screen = "playing";
     this.loop.setPaused(false);
   }
@@ -376,6 +609,7 @@ export class Game {
   applySettings(settings: GameSettings): void {
     hud.settings = settings;
     this.world.difficultyId = settings.difficulty;
+    this.input.aimMode = settings.aimMode;
     this.renderer.camera.shakeIntensity = settings.shakeIntensity;
     audio.settings = { ...settings.audio };
     audio.applySettings();
@@ -468,6 +702,7 @@ export class Game {
         playtime: Math.round(this.world.elapsed),
         deaths: 0,
       },
+      idle: this.idle?.serializeForExit(),
     };
     // `hud.settings` to proxy runes Svelte 5 — `structuredClone` w IndexedDB
     // rzuca na nim DataCloneError. Zapis i tak jest czystym JSON-em, więc

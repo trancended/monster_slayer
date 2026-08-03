@@ -51,6 +51,8 @@ export const Flag = {
   Broken: 1 << 3,
   Invulnerable: 1 << 4,
   Blocking: 1 << 5,
+  /** Furia już się odpaliła — mnożniki nakłada się raz, nie co klatkę. */
+  Enraged: 1 << 6,
 } as const;
 
 export class EntityStore {
@@ -85,6 +87,8 @@ export class EntityStore {
   readonly subStep = new Uint8Array(MAX_ENTITIES);
   readonly flags = new Uint16Array(MAX_ENTITIES);
   readonly eliteMods = new Uint8Array(MAX_ENTITIES);
+  /** Odliczanie do kolejnego przyzwania sług (cecha `summon`). */
+  readonly summonTimer = new Float32Array(MAX_ENTITIES);
 
   readonly hitFlash = new Float32Array(MAX_ENTITIES);
   readonly lifetime = new Float32Array(MAX_ENTITIES);
@@ -130,6 +134,7 @@ export class EntityStore {
     this.subStep[id] = 0;
     this.flags[id] = 0;
     this.eliteMods[id] = 0;
+    this.summonTimer[id] = 0;
     this.hitFlash[id] = 0;
     this.lifetime[id] = 0;
     this.owner[id] = -1;
