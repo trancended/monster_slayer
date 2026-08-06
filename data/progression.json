@@ -1,7 +1,7 @@
 {
   "version": 1,
   "xpCurve": { "base": 100, "exponent": 1.35 },
-  "maxLevel": 40,
+  "maxLevel": 120,
   "perLevel": {
     "attributePoints": 3,
     "skillPoints": 1,

@@ -251,7 +251,7 @@
     }
   ],
   "forge": {
-    "maxUpgradeLevel": 15,
+    "maxUpgradeLevel": 50,
     "upgradeStatPerLevel": 0.06,
     "upgradeGold0": 500,
     "upgradeGoldR": 1.55,

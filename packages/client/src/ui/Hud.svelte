@@ -92,6 +92,19 @@
     Encounter {hud.encounter} · strefa {hud.zoneLevel}
     {#if hud.enemiesLeft > 0}· wrogów: {hud.enemiesLeft}{/if}
   </div>
+  <!-- Gdzie i z kim. Nazwa areny zmienia się co rundę, gatunek co dziesięć —
+       bez tego gracz widzi, że wrogowie się zmienili, ale nie wie, na co. -->
+  {#if hud.arenaName}
+    <div class="place">{hud.arenaName}</div>
+  {/if}
+  {#if hud.speciesName}
+    <div class="muted">Gatunek: {hud.speciesName}</div>
+  {/if}
+  <!-- Waluta kowala. Pokazujemy ją tylko wtedy, gdy gracz ją ma — licznik na
+       zero byłby obietnicą mechaniki, o której nic jeszcze nie wie. -->
+  {#if hud.forgeCores > 0}
+    <div class="cores">Rdzenie kowala: {hud.forgeCores}</div>
+  {/if}
   {#if hud.intermission > 0}
     <div class="breather">Oddech: {hud.intermission.toFixed(1)} s</div>
   {/if}
@@ -252,6 +265,14 @@
   }
   .breather {
     color: var(--stam);
+  }
+  /* Nazwa areny jest jaśniejsza od reszty bloku: to ona mówi, gdzie jesteśmy. */
+  .place {
+    color: var(--xp);
+    opacity: 0.9;
+  }
+  .cores {
+    color: #ffb03d;
   }
 
   .botleft {

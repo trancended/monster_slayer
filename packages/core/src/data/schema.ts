@@ -178,6 +178,14 @@ export const EnemyDefSchema = z.object({
   traits: z.record(z.string(), z.unknown()).default({}),
   dropChance: z.number(),
   /**
+   * Koszt budżetowy fali (`World.spawnCost`). Podaje się go **względem etapu**,
+   * nie w HP: goblin ≈ 1, ork ≈ 4 i tak samo ich odpowiedniki w setnej rundzie.
+   * Liczenie kosztu z absolutnego HP dawało pod koniec fale z jednym wrogiem,
+   * bo HP potworów rośnie wykładniczo, a budżet fali liniowo.
+   * Brak pola = koszt szacowany z HP i obrażeń (ręczny roster, stare dane).
+   */
+  cost: z.number().positive().optional(),
+  /**
    * Zestaw ataku, z którego zbudowano bossa, wraz z jednozdaniową zapowiedzią
    * taktyczną. Dwa zestawy mogą dzielić parę (rodzaj, kształt) — „szerokie
    * cięcia" i „szybkie pchnięcia" to oba `combo` w stożku — więc bez tego pola

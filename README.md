@@ -12,6 +12,7 @@ Backend Phoenix (M3: sync zapisów, telemetria, `/admin`) jeszcze nie powstał �
 offline-first i działa bez niego w całości.
 
 Stan implementacji v4 co do sekcji: [`docs/v4-implementacja.md`](docs/v4-implementacja.md).
+Plan dalszego rozwoju (ekrany decyzji, pomiar, mobile): [`docs/v5.md`](docs/v5.md).
 Szczegóły braków w warstwie walki: [Zakres](#zakres).
 
 ---
@@ -207,6 +208,31 @@ trauma-based screen shake, camera kick, hit flash, poolowane liczby obrażeń.
 caster, bomber, mini-boss), FSM `IDLE → PATROL → ALERT → CHASE → COMBAT ⇄ REPOSITION → STAGGERED`,
 percepcja stożkiem 110°/14 m + słuch, **attack token system** (max 2 atakujących naraz),
 separacja boidami, telegrafy kodowane kształtem, modyfikatory elit.
+
+**Areny i biomy** (`sim/arena.ts`, `render3d/arena3d.ts`) — **nowa arena po każdym
+wygranym poziomie**: świeży, losowy układ przeszkód (skały, drzewa, filary, kryształy,
+pniaki, kości), a co pięć rund inny biom — 24 biomy, czyli 120 rund bez powtórki.
+Biom niesie paletę, roślinność i **widok na horyzoncie** (wulkan, lodowiec, wieże,
+wydmy, ruiny, latające wyspy, martwe drzewa, pagórki) plus kopułę nieba z gradientem
+i ciało niebieskie. Wszystko proceduralne: zero plików graficznych.
+
+Układ areny to czysta funkcja `(ziarno, runda)`, więc po F5 wracasz na tę samą planszę.
+Losowość jest ograniczona regułami, których pilnują testy: pusty środek (punkt
+odrodzenia), przejezdny pierścień wejściowy wrogów, prześwit między przeszkodami
+i minimum dwie zasłony linii wzroku (GDD §9.3).
+
+**Gatunki wrogów** (`sim/enemygen.ts`) — co dziesięć rund, **po dwóch pokonanych
+bossach**, arenę zalewa inny i mocniejszy gatunek: 32 gatunki po pięć jednostek
+(jedna na archetyp), z własną paletą, sylwetką, nazwami i cechą sygnaturową.
+Gatunki różnią się **charakterem, nie sumą sił** (`hpMult + damageMult ≈ 2`) — eskalacja
+należy wyłącznie do krzywej etapu, inaczej co drugi „nowy, mocniejszy gatunek" byłby
+w praktyce słabszy od poprzedniego. Boss etapu nosi barwy swojego gatunku.
+
+**Kowal** (`sim/smith.ts`) — z każdego pokonanego bossa wypada **rdzeń kowala**;
+pierwszy otwiera warsztat w ekwipunku. Zbędne wyposażenie odkłada się na kowadło
+i przekuwa w **legendę losowego typu**: 30 mocy = 30 zwykłych albo 10 epickich,
+plus jeden rdzeń. Nieudane przekucie nie zabiera niczego, a „Wybierz zbędne"
+dokłada tylko śmieci (zwykłe → rzadkie), nigdy epików.
 
 **Proceduralny bestiariusz** (`sim/enemygen.ts`) — ręczny roster kończy się po ośmiu
 wpisach, a gra idle ma trwać setki encounterów. Każdy kolejny boss jest **inną walką**,
@@ -437,7 +463,8 @@ oraz przy wyczyszczeniu encounteru, awansie i utracie widoczności karty.
 | Element | Kamień milowy | Uwaga |
 |---|---|---|
 | Backend Phoenix (`/api`, `balance:live`, `/admin`, Oban, Postgres) | M3 | Klient ma gotowego klienta HTTP/WS i tryb offline; `docker compose --profile backend up db` podnosi samą bazę |
-| **UI kuźni, drzewka, wyzwań, bestiariusza, filtru łupu** | v4 | Logika i dane stoją i są przetestowane — brakuje ekranów. Największy pozostały kawałek, szczegóły w `docs/v4-implementacja.md` |
+| **UI kuźni, drzewka, wyzwań, bestiariusza, filtru łupu** | v5 E1 | Logika i dane stoją i są przetestowane — brakuje ekranów. Największy pozostały kawałek: `docs/v4-implementacja.md` (stan), `docs/v5.md` §2 (plan) |
+| **Sterowanie dotykiem / wersja mobilna** | v5 E3 | `input/input.ts` zna klawiaturę, mysz i pada; dotyku nie zna wcale. Plan i budżet wydajności: `docs/v5.md` §4 |
 | Hub, 4 strefy, pokoje z Tiled, boss finałowy | M5–M6 | Zamiast tego jedna arena z narastającymi encounterami |
 | Animacje klatkowe, atlasy sprite'ów | M5 | Sylwetki są rysowane proceduralnie i nieanimowane — pozy statyczne, reakcje przez skalę, przechył i błysk |
 | Sprzedawca, respec, reroll afiksów | M4–M5 | Sprzedaż przedmiotów działa |

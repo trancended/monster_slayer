@@ -40,8 +40,28 @@ export const GENERATED_TRAITS = [
 
 export type GeneratedTrait = (typeof GENERATED_TRAITS)[number];
 
-/** Ile tierów bossów budujemy z góry. 40 bossów to ~200 encounterów. */
-export const MAX_BOSS_TIERS = 40;
+/** Ile tierów bossów budujemy z góry. 80 bossów to ~400 encounterów. */
+export const MAX_BOSS_TIERS = 80;
+
+/**
+ * Ile gatunków budujemy z góry: szesnaście szablonów w dwóch cyklach nazw.
+ * Gatunek zmienia się co dziesięć rund, czyli po dwóch pokonanych bossach —
+ * 32 gatunki pokrywają ~320 rund, a bossowie sięgają dalej niż to.
+ */
+export const MAX_SPECIES = 32;
+
+/** Ile jednostek ma gatunek: po jednej na archetyp, żeby fala miała rytm. */
+export const UNITS_PER_SPECIES = 5;
+
+/** Co ile rund wchodzi nowy gatunek. */
+export const ROUNDS_PER_SPECIES = 10;
+
+/**
+ * Ilu bossów trzeba pokonać na jeden gatunek. Dwa progi (rundy i bossowie)
+ * pilnują tego samego tempa z dwóch stron: gatunek jest nagrodą za bossów,
+ * a nie za przewinięcie licznika fal.
+ */
+export const BOSSES_PER_SPECIES = 2;
 
 /**
  * Ile ostatnich zestawów ataku jest zablokowanych przy losowaniu kolejnego.
@@ -321,12 +341,38 @@ function shuffled<T>(items: readonly T[], rng: Rng): T[] {
   return out;
 }
 
-function pickAttributes(rng: Rng, tier: number, count: number, boss: boolean): Record<string, unknown> {
-  const pool = ATTRIBUTES.filter((a) => boss || !a.bossOnly);
+function pickAttributes(
+  rng: Rng,
+  tier: number,
+  count: number,
+  boss: boolean,
+  fits?: (trait: GeneratedTrait) => boolean,
+): Record<string, unknown> {
+  const pool = ATTRIBUTES.filter((a) => (boss || !a.bossOnly) && (!fits || fits(a.trait)));
   const chosen = shuffled(pool, rng).slice(0, Math.min(count, pool.length));
   const traits: Record<string, unknown> = {};
   for (const a of chosen) traits[a.trait] = a.make(rng, tier);
   return traits;
+}
+
+/** Wartości jednej, wskazanej cechy — potrzebne dla sygnatury gatunku. */
+function makeTrait(trait: GeneratedTrait, rng: Rng, tier: number): Record<string, unknown> {
+  const def = ATTRIBUTES.find((a) => a.trait === trait);
+  return def ? { [def.trait]: def.make(rng, tier) } : {};
+}
+
+/**
+ * Czy cecha ma sens dla tego archetypu. Zasada 3 tego modułu („żadnych atrybutów
+ * na niby") wymaga nie tylko miejsca odczytu w kodzie, ale i tego, żeby ten odczyt
+ * kiedykolwiek nastąpił: `poisonPool` czyta wyłącznie `World.explode`, więc kaster
+ * „Jadowity" nigdy nie zostawiłby kałuży, a `thorns` sprawdza dystans zwarcia,
+ * więc łucznik „Cierniowy" nie odbiłby ani jednego obrażenia.
+ */
+function traitFits(trait: GeneratedTrait, archetype: UnitArchetype): boolean {
+  if (trait === "poisonPool") return archetype === "bomber";
+  if (trait === "thorns") return archetype === "swarmer" || archetype === "bruiser";
+  if (trait === "summon") return false;
+  return true;
 }
 
 /** Nazwy atrybutów do wyświetlenia — HUD pokazuje, z czym gracz ma do czynienia. */
@@ -336,9 +382,33 @@ export function traitLabels(traits: Record<string, unknown>): string[] {
   return out;
 }
 
-function makeBoss(tier: number, kit: AttackKit, rng: Rng): EnemyDef {
+/**
+ * Do którego gatunku należy boss danego tieru. Bossowie wypadają co 5 rund,
+ * gatunek zmienia się co 10 — więc na etap przypadają dokładnie dwie walki
+ * z bossem, a boss wygląda jak szczytowy okaz tego, co właśnie zalewa arenę.
+ */
+export function speciesStageForBossTier(tier: number): number {
+  // Sufit jak w `World.speciesStage`: przy 80 tierach bossów wyszłoby 39 etapów,
+  // czyli bossowie w barwach gatunków, których gracz nigdy nie zobaczy na arenie.
+  return Math.max(0, Math.min(MAX_SPECIES, Math.floor((Math.max(1, tier) - 1) / 2)));
+}
+
+function makeBoss(tier: number, kit: AttackKit, rng: Rng, usedNames: Set<string>): EnemyDef {
   const domain = DOMAINS[rng.int(0, DOMAINS.length - 1)]!;
-  const title = BOSS_TITLES[rng.int(0, BOSS_TITLES.length - 1)]!;
+  const stage = speciesStageForBossTier(tier);
+  // Etap 0 to ręczny roster (gobliny, szkielety, orki) — tam boss zostaje przy
+  // starej mitologii domen. Od etapu 1 nosi barwy swojego gatunku.
+  const sp = stage >= 1 ? speciesTemplateFor(stage) : null;
+  const of = sp ? sp.of : domain.of;
+
+  // Nazwa musi być niepowtarzalna: dwóch „Heroldów Kości" gracz czyta jako
+  // powtórzoną walkę, nawet jeśli mają zupełnie inne ataki.
+  let name = "";
+  for (let attempt = 0; attempt < 12; attempt++) {
+    name = `${BOSS_TITLES[rng.int(0, BOSS_TITLES.length - 1)]!} ${of}`;
+    if (!usedNames.has(name)) break;
+  }
+  usedNames.add(name);
 
   // Baza rośnie łagodnie, bo skalowanie strefą (`zoneScaling`) dokłada swoje
   // przy odradzaniu. Bez tego dwa mnożniki mnożyłyby się w ścianę.
@@ -346,7 +416,7 @@ function makeBoss(tier: number, kit: AttackKit, rng: Rng): EnemyDef {
 
   return {
     id: `boss_t${tier}`,
-    name: `${title} ${domain.of}`,
+    name,
     archetype: kit.archetype,
     hp: Math.round(1600 * growth),
     damage: Math.round(26 * Math.pow(1.19, tier - 1)),
@@ -357,7 +427,7 @@ function makeBoss(tier: number, kit: AttackKit, rng: Rng): EnemyDef {
     radius: 0.72,
     mass: 3.4,
     moveSpeed: rng.range(3.0, 3.9),
-    color: domain.color,
+    color: sp ? sp.color : domain.color,
     isBoss: true,
     breakBar: Math.round(140 + tier * 22),
     breakWindow: 3.2,
@@ -371,96 +441,566 @@ function makeBoss(tier: number, kit: AttackKit, rng: Rng): EnemyDef {
     dropChance: 1,
     appearance: {
       build: kit.build,
-      head: rng.pick(["horned", "skull", "hooded", "orc"]),
+      head: sp ? rng.pick(sp.heads) : rng.pick(["horned", "skull", "hooded", "orc"]),
       weapon: kit.weapon,
       cape: rng.chance(0.6),
       shield: rng.chance(0.25),
-      accent: domain.accent,
+      accent: sp ? sp.accent : domain.accent,
       scale: 1.3 + tier * 0.012,
     },
   };
 }
 
+/** Archetypy szeregowych. Kolejność jest stała — z niej wynikają slot i `defIdx`. */
+export type UnitArchetype = "swarmer" | "ranged" | "bruiser" | "caster" | "bomber";
+
+export const UNIT_ARCHETYPES: readonly UnitArchetype[] = [
+  "swarmer",
+  "ranged",
+  "bruiser",
+  "caster",
+  "bomber",
+];
+
+/**
+ * Baza jednostki wg archetypu — jedno miejsce dla sług bossów i dla gatunków.
+ * `cost` to **koszt budżetowy fali**: zagrożenie względem własnego etapu, nie
+ * liczba HP. Liczenie kosztu z absolutnego HP dawało falę z jednym wrogiem
+ * w setnej rundzie, bo HP rośnie wykładniczo, a budżet fali liniowo.
+ */
+const UNIT_BASE: Record<
+  UnitArchetype,
+  {
+    hp: number;
+    damage: number;
+    poise: number;
+    xp: number;
+    radius: number;
+    mass: number;
+    speed: [number, number];
+    cost: number;
+    build: string;
+    dropChance: number;
+  }
+> = {
+  swarmer: { hp: 70, damage: 11, poise: 12, xp: 34, radius: 0.38, mass: 0.8, speed: [4.2, 5.6], cost: 1.2, build: "normal", dropChance: 0.05 },
+  ranged: { hp: 55, damage: 11, poise: 12, xp: 34, radius: 0.38, mass: 0.8, speed: [3.4, 4.2], cost: 1.6, build: "slim", dropChance: 0.05 },
+  bruiser: { hp: 120, damage: 20, poise: 26, xp: 60, radius: 0.5, mass: 1.6, speed: [4.2, 5.6], cost: 4.0, build: "hulking", dropChance: 0.12 },
+  caster: { hp: 55, damage: 11, poise: 12, xp: 34, radius: 0.38, mass: 0.8, speed: [3.4, 4.2], cost: 2.0, build: "slim", dropChance: 0.05 },
+  bomber: { hp: 70, damage: 32, poise: 12, xp: 34, radius: 0.44, mass: 0.8, speed: [4.2, 5.6], cost: 1.8, build: "crawler", dropChance: 0.06 },
+};
+
+/** Atak wg archetypu. Używa wyłącznie pól, które `ai.ts` faktycznie wykonuje. */
+function unitAttack(archetype: UnitArchetype, rng: Rng): EnemyDef["attack"] {
+  if (archetype === "bomber") {
+    return {
+      kind: "explode",
+      range: 1.3,
+      telegraph: 0.62,
+      active: 0.1,
+      recovery: 0.2,
+      cooldown: 1,
+      poiseDamage: 18,
+      knockback: 0.9,
+      shape: "circle",
+      radiusMeters: rng.range(2.4, 3.2),
+    };
+  }
+  if (archetype === "ranged" || archetype === "caster") {
+    return {
+      kind: "projectile",
+      range: rng.range(8, 11),
+      telegraph: rng.range(0.5, 0.8),
+      active: 0.15,
+      recovery: 0.4,
+      cooldown: rng.range(1.4, 2.4),
+      poiseDamage: 8,
+      knockback: 0.2,
+      shape: "line",
+      projectile: { speed: rng.range(9, 13), radius: 0.24, lifetime: 2.4 },
+    };
+  }
+  const tough = archetype === "bruiser";
+  return {
+    kind: "melee",
+    range: rng.range(1.6, 2.6),
+    telegraph: rng.range(0.36, 0.6),
+    active: 0.12,
+    recovery: rng.range(0.3, 0.5),
+    cooldown: rng.range(0.9, 1.6),
+    poiseDamage: tough ? 16 : 9,
+    knockback: tough ? 0.6 : 0.25,
+    shape: "cone",
+    arcDeg: rng.int(70, 120),
+  };
+}
+
+/** Broń wg archetypu; `melee` to pula gatunku, bo ona najmocniej niesie motyw. */
+function unitWeapon(archetype: UnitArchetype, rng: Rng, melee: readonly string[]): string {
+  if (archetype === "bomber") return "claws";
+  if (archetype === "caster") return "staff";
+  if (archetype === "ranged") return rng.pick(["bow", "spear"]);
+  return rng.pick(melee);
+}
+
 function makeMinion(tier: number, slot: number, rng: Rng): EnemyDef {
   const domain = DOMAINS[rng.int(0, DOMAINS.length - 1)]!;
-  const archetype = rng.pick(["swarmer", "ranged", "bruiser", "caster", "bomber"]);
+  const archetype = rng.pick(UNIT_ARCHETYPES);
   const noun = rng.pick(MINION_NOUNS[archetype]!);
   const growth = Math.pow(1.3, tier);
-
-  const ranged = archetype === "ranged" || archetype === "caster";
-  const bomber = archetype === "bomber";
+  const base = UNIT_BASE[archetype];
   const tough = archetype === "bruiser";
-
-  const attack: EnemyDef["attack"] = bomber
-    ? {
-        kind: "explode",
-        range: 1.3,
-        telegraph: 0.62,
-        active: 0.1,
-        recovery: 0.2,
-        cooldown: 1,
-        poiseDamage: 18,
-        knockback: 0.9,
-        shape: "circle",
-        radiusMeters: rng.range(2.4, 3.2),
-      }
-    : ranged
-      ? {
-          kind: "projectile",
-          range: rng.range(8, 11),
-          telegraph: rng.range(0.5, 0.8),
-          active: 0.15,
-          recovery: 0.4,
-          cooldown: rng.range(1.4, 2.4),
-          poiseDamage: 8,
-          knockback: 0.2,
-          shape: "line",
-          projectile: { speed: rng.range(9, 13), radius: 0.24, lifetime: 2.4 },
-        }
-      : {
-          kind: "melee",
-          range: rng.range(1.6, 2.6),
-          telegraph: rng.range(0.36, 0.6),
-          active: 0.12,
-          recovery: rng.range(0.3, 0.5),
-          cooldown: rng.range(0.9, 1.6),
-          poiseDamage: tough ? 16 : 9,
-          knockback: tough ? 0.6 : 0.25,
-          shape: "cone",
-          arcDeg: rng.int(70, 120),
-        };
 
   return {
     id: `unit_t${tier}_${slot}`,
     name: `${domain.adj} ${noun}`,
     archetype,
-    hp: Math.round((tough ? 120 : ranged ? 55 : 70) * growth),
-    damage: Math.round((bomber ? 32 : tough ? 20 : 11) * Math.pow(1.16, tier)),
-    poise: tough ? 26 : 12,
+    hp: Math.round(base.hp * growth),
+    damage: Math.round(base.damage * Math.pow(1.16, tier)),
+    poise: base.poise,
     armor: Math.round(tough ? 3 + tier : tier * 0.5),
-    xp: Math.round((tough ? 60 : 34) * growth),
+    xp: Math.round(base.xp * growth),
     gold: Math.round(14 * growth),
-    radius: tough ? 0.5 : bomber ? 0.44 : 0.38,
-    mass: tough ? 1.6 : 0.8,
-    moveSpeed: ranged ? rng.range(3.4, 4.2) : rng.range(4.2, 5.6),
+    radius: base.radius,
+    mass: base.mass,
+    moveSpeed: rng.range(base.speed[0], base.speed[1]),
     color: domain.color,
-    attack,
+    cost: base.cost,
+    attack: unitAttack(archetype, rng),
     // Szeregowi dostają najwyżej jeden atrybut — inaczej pakiet dziesięciu
     // wrogów niesie tyle reguł naraz, że nie da się ich odczytać w walce.
-    traits: rng.chance(0.45) ? pickAttributes(rng, tier, 1, false) : {},
-    dropChance: bomber ? 0.06 : tough ? 0.12 : 0.05,
+    traits: rng.chance(0.45)
+      ? pickAttributes(rng, tier, 1, false, (t) => traitFits(t, archetype))
+      : {},
+    dropChance: base.dropChance,
     appearance: {
-      build: tough ? "hulking" : bomber ? "crawler" : ranged ? "slim" : "normal",
+      build: base.build,
       head: rng.pick(["goblin", "skull", "orc", "hooded", "insect", "horned"]),
-      weapon: bomber
-        ? "claws"
-        : archetype === "caster"
-          ? "staff"
-          : archetype === "ranged"
-            ? rng.pick(["bow", "spear"])
-            : rng.pick(["sword", "axe", "dagger"]),
+      weapon: unitWeapon(archetype, rng, ["sword", "axe", "dagger"]),
       accent: domain.accent,
       scale: tough ? 1.1 : 1,
+    },
+  };
+}
+
+// ──────────────────────────────────────────────────────────────── gatunki
+
+/**
+ * Gatunek to **cała fala naraz**, nie jeden potwór: pięć jednostek o wspólnej
+ * sylwetce, palecie i sygnaturze, po jednej na archetyp. Bez tego dwudziesta
+ * runda wyglądała jak druga — same orki i gobliny, tylko z większym HP.
+ */
+export interface SpeciesTemplate {
+  id: string;
+  /** Nazwa pierwszego cyklu i drugiego (etapy 11–20). Obie pisane ręcznie,
+   *  bo polska odmiana przymiotnika nie da się skleić automatycznie. */
+  name: string;
+  elderName: string;
+  /** Dopełniacz do nazw bossów: „Pożeracz Roju". */
+  of: string;
+  /** Jednozdaniowa zapowiedź — HUD ogłasza ją przy zmianie gatunku. */
+  tell: string;
+  color: number;
+  accent: number;
+  heads: string[];
+  /** Pula broni białej — topór trolla kontra kordelas dworu. */
+  melee: string[];
+  /** Nazwy jednostek wg archetypu. Nazwa ma zdradzać zachowanie. */
+  nouns: Record<UnitArchetype, string>;
+  /** Cecha definiująca gatunek. Trafia tylko na te archetypy, na których działa. */
+  signature: GeneratedTrait;
+  /**
+   * Modyfikatory wobec bazy archetypu. Gatunek ma mieć **charakter, nie inną
+   * sumę sił**: `hpMult + damageMult ≈ 2`, więc konstrukty są twarde i słabe,
+   * a upiory kruche i bijące — ale żadne nie jest po prostu mocniejsze.
+   *
+   * To nie kosmetyka. Eskalacja siły należy wyłącznie do krzywej etapu
+   * (`speciesGrowth`); gdyby doszły do niej wahania ±60% z charakteru gatunku,
+   * co drugi „nowy, mocniejszy gatunek" byłby w praktyce słabszy od poprzedniego.
+   * Pilnuje tego test `species.test.ts` → „kolejny gatunek jest realnie mocniejszy".
+   */
+  hpMult: number;
+  damageMult: number;
+  speedMult: number;
+  armorBonus: number;
+  /** Mnożnik rozmiaru sylwetki: kolos ma górować, rój ma się kłębić. */
+  scale: number;
+}
+
+const SPECIES: readonly SpeciesTemplate[] = [
+  {
+    id: "cult_of_ash",
+    name: "Kult Popiołu",
+    elderName: "Prastary Kult Popiołu",
+    of: "Popiołu",
+    tell: "rytualiści — biją z dystansu i skażają grunt",
+    color: 0x8a4a3a,
+    accent: 0xff6a2a,
+    heads: ["hooded", "horned"],
+    melee: ["dagger", "sword"],
+    nouns: { swarmer: "Zelota", ranged: "Ciskacz Żaru", bruiser: "Kadzidlarz", caster: "Piromanta", bomber: "Popielnik" },
+    signature: "poisonPool",
+    hpMult: 0.88,
+    damageMult: 1.12,
+    speedMult: 1.0,
+    armorBonus: 0,
+    scale: 1,
+  },
+  {
+    id: "bone_legion",
+    name: "Legion Kości",
+    elderName: "Odwieczny Legion Kości",
+    of: "Kości",
+    tell: "karna formacja — trzymają gardę z przodu, obejdź ich",
+    color: 0xd8d2be,
+    accent: 0xff5a3c,
+    heads: ["skull"],
+    melee: ["sword", "axe"],
+    nouns: { swarmer: "Kościej", ranged: "Chorąży", bruiser: "Marszałek Kości", caster: "Grabarz", bomber: "Trupojad" },
+    signature: "frontalBlock",
+    hpMult: 1.12,
+    damageMult: 0.88,
+    speedMult: 0.9,
+    armorBonus: 2,
+    scale: 1,
+  },
+  {
+    id: "chitin_swarm",
+    name: "Rój Chitynowy",
+    elderName: "Prastary Rój Chitynowy",
+    of: "Roju",
+    tell: "szybkie i liczne — nie daj się otoczyć",
+    color: 0x7a8f3a,
+    accent: 0xd4ff4a,
+    heads: ["insect"],
+    melee: ["claws", "dagger"],
+    nouns: { swarmer: "Kąsacz", ranged: "Plujka", bruiser: "Żuwaczka", caster: "Matecznik", bomber: "Larwa" },
+    signature: "thorns",
+    hpMult: 0.8,
+    damageMult: 1.2,
+    speedMult: 1.28,
+    armorBonus: 0,
+    scale: 0.95,
+  },
+  {
+    id: "iron_constructs",
+    name: "Żelazne Konstrukty",
+    elderName: "Pierwotne Konstrukty",
+    of: "Kuźni",
+    tell: "opancerzone i wolne — łam je ciężkim ciosem",
+    color: 0x6d7a8c,
+    accent: 0xbfe4ff,
+    heads: ["helmet", "horned"],
+    melee: ["greatsword", "axe"],
+    nouns: { swarmer: "Automat", ranged: "Balista", bruiser: "Kolos", caster: "Rdzeń Runiczny", bomber: "Kadłub" },
+    signature: "frontalBlock",
+    hpMult: 1.22,
+    damageMult: 0.78,
+    speedMult: 0.8,
+    armorBonus: 4,
+    scale: 1.1,
+  },
+  {
+    id: "void_wraiths",
+    name: "Upiory Pustki",
+    elderName: "Wyższe Upiory Pustki",
+    of: "Pustki",
+    tell: "szybkie i kruche — wzmacniają się nawzajem",
+    color: 0x4a4a7a,
+    accent: 0x9b6bff,
+    heads: ["hooded", "skull"],
+    melee: ["dagger", "sword"],
+    nouns: { swarmer: "Zjawa", ranged: "Szept", bruiser: "Mara", caster: "Widmo", bomber: "Cień" },
+    signature: "aura",
+    hpMult: 0.84,
+    damageMult: 1.16,
+    speedMult: 1.3,
+    armorBonus: 0,
+    scale: 1,
+  },
+  {
+    id: "abyss_demons",
+    name: "Demony Otchłani",
+    elderName: "Książęta Otchłani",
+    of: "Otchłani",
+    tell: "im bliżej śmierci, tym groźniejsze — dobijaj szybko",
+    color: 0x8c3a3a,
+    accent: 0xff3b30,
+    heads: ["horned"],
+    melee: ["axe", "greatsword"],
+    nouns: { swarmer: "Bies", ranged: "Czart", bruiser: "Piekielnik", caster: "Oprawca", bomber: "Rogacz" },
+    signature: "enrage",
+    hpMult: 1.05,
+    damageMult: 0.95,
+    speedMult: 1.05,
+    armorBonus: 1,
+    scale: 1.05,
+  },
+  {
+    id: "frost_trolls",
+    name: "Trolle Szronu",
+    elderName: "Praojcowie Szronu",
+    of: "Szronu",
+    tell: "wolne kolosy — karzą za stanie w zasięgu",
+    color: 0x6a90a8,
+    accent: 0x8fe8ff,
+    heads: ["orc"],
+    melee: ["axe", "greatsword"],
+    nouns: { swarmer: "Szroniarz", ranged: "Lodołam", bruiser: "Zwalisty", caster: "Mruk", bomber: "Gruchot" },
+    signature: "enrage",
+    hpMult: 1.2,
+    damageMult: 0.8,
+    speedMult: 0.85,
+    armorBonus: 2,
+    scale: 1.15,
+  },
+  {
+    id: "plague_spawn",
+    name: "Pomiot Zarazy",
+    elderName: "Macierz Zarazy",
+    of: "Zarazy",
+    tell: "pękają w kałuże jadu — nie kończ ich w zwarciu",
+    color: 0x6f8f4a,
+    accent: 0x9be34a,
+    heads: ["insect", "goblin"],
+    melee: ["claws", "dagger"],
+    nouns: { swarmer: "Zgnilec", ranged: "Miazma", bruiser: "Wrzód", caster: "Ropień", bomber: "Pękacz" },
+    signature: "poisonPool",
+    hpMult: 0.86,
+    damageMult: 1.14,
+    speedMult: 1.08,
+    armorBonus: 0,
+    scale: 1,
+  },
+  {
+    id: "rust_titans",
+    name: "Rdzawe Titany",
+    elderName: "Kolosy Rdzy",
+    of: "Rdzy",
+    tell: "ściana żelaza — bez przełamania gardy nie zrobisz nic",
+    color: 0x9a5a2c,
+    accent: 0xffa23d,
+    heads: ["helmet", "horned"],
+    melee: ["greatsword", "axe"],
+    nouns: { swarmer: "Zgrzyt", ranged: "Miot", bruiser: "Kuźnik", caster: "Zwora", bomber: "Wal" },
+    signature: "frontalBlock",
+    hpMult: 1.25,
+    damageMult: 0.75,
+    speedMult: 0.78,
+    armorBonus: 5,
+    scale: 1.2,
+  },
+  {
+    id: "pale_court",
+    name: "Blady Dwór",
+    elderName: "Nieśmiertelny Dwór",
+    of: "Dworu",
+    tell: "walczą w szyku i dowodzą sobą — najpierw zdejmij dowódcę",
+    color: 0xb0a0c0,
+    accent: 0xffb0e8,
+    heads: ["hooded", "helmet"],
+    melee: ["sword", "spear"],
+    nouns: { swarmer: "Straż", ranged: "Łucznik Dworu", bruiser: "Herold", caster: "Kanclerz", bomber: "Dworzanin" },
+    signature: "aura",
+    hpMult: 0.95,
+    damageMult: 1.05,
+    speedMult: 1.12,
+    armorBonus: 1,
+    scale: 1,
+  },
+
+  {
+    id: "sand_wraiths",
+    name: "Piaskowe Zmory",
+    elderName: "Prastare Zmory",
+    of: "Piasków",
+    tell: "wynurzają się szybko i biją z zaskoczenia",
+    color: 0xb08a5a,
+    accent: 0xffe0a0,
+    heads: ["hooded", "insect"],
+    melee: ["dagger", "spear"],
+    nouns: { swarmer: "Sypacz", ranged: "Prochowiec", bruiser: "Wydmuch", caster: "Suchy Głos", bomber: "Pylnik" },
+    signature: "thorns",
+    hpMult: 0.86,
+    damageMult: 1.14,
+    speedMult: 1.22,
+    armorBonus: 0,
+    scale: 1,
+  },
+  {
+    id: "storm_heralds",
+    name: "Heroldowie Burzy",
+    elderName: "Wyżsi Heroldowie Burzy",
+    of: "Burzy",
+    tell: "walczą w szyku i wzmacniają się nawzajem",
+    color: 0x5a7a9a,
+    accent: 0xdcefff,
+    heads: ["helmet", "horned"],
+    melee: ["spear", "sword"],
+    nouns: { swarmer: "Grzmot", ranged: "Piorunnik", bruiser: "Chorąży Burzy", caster: "Wieszcz", bomber: "Kula Gromu" },
+    signature: "aura",
+    hpMult: 1.08,
+    damageMult: 0.92,
+    speedMult: 1.05,
+    armorBonus: 2,
+    scale: 1.05,
+  },
+  {
+    id: "fungal_brood",
+    name: "Grzybowy Miot",
+    elderName: "Macierz Grzybni",
+    of: "Grzybni",
+    tell: "pękają w zarodniki — nie kończ ich w zwarciu",
+    color: 0x7a6a8a,
+    accent: 0xc0ff8a,
+    heads: ["insect", "goblin"],
+    melee: ["claws", "dagger"],
+    nouns: { swarmer: "Kapelusznik", ranged: "Zarodnik", bruiser: "Huba", caster: "Grzybnia", bomber: "Purchawka" },
+    signature: "poisonPool",
+    hpMult: 0.9,
+    damageMult: 1.1,
+    speedMult: 1.0,
+    armorBonus: 0,
+    scale: 1,
+  },
+  {
+    id: "obsidian_wardens",
+    name: "Obsydianowi Stróże",
+    elderName: "Pierwotni Stróże",
+    of: "Obsydianu",
+    tell: "garda z przodu i twarda skorupa — obchodź, nie przepychaj",
+    color: 0x38343e,
+    accent: 0xff5a5a,
+    heads: ["helmet", "horned"],
+    melee: ["greatsword", "axe"],
+    nouns: { swarmer: "Odłamek", ranged: "Miotacz Szkła", bruiser: "Stróż", caster: "Zwierciadlnik", bomber: "Skorupa" },
+    signature: "frontalBlock",
+    hpMult: 1.24,
+    damageMult: 0.76,
+    speedMult: 0.82,
+    armorBonus: 4,
+    scale: 1.1,
+  },
+  {
+    id: "blood_choir",
+    name: "Krwawy Chór",
+    elderName: "Wieczny Chór",
+    of: "Krwi",
+    tell: "ranne wpadają w szał — dobijaj bez zwłoki",
+    color: 0x8a2a3a,
+    accent: 0xff4a6a,
+    heads: ["hooded", "skull"],
+    melee: ["dagger", "sword"],
+    nouns: { swarmer: "Kantor", ranged: "Krwiopijca", bruiser: "Rzeźnik Chóru", caster: "Psalmista", bomber: "Naczynie" },
+    signature: "enrage",
+    hpMult: 1.02,
+    damageMult: 0.98,
+    speedMult: 1.15,
+    armorBonus: 1,
+    scale: 1,
+  },
+  {
+    id: "star_husks",
+    name: "Gwiezdne Łuski",
+    elderName: "Prastare Łuski",
+    of: "Gwiazd",
+    tell: "odbijają część ciosów — uważaj w zwarciu",
+    color: 0x4a5a8a,
+    accent: 0xc0d8ff,
+    heads: ["horned", "insect"],
+    melee: ["spear", "greatsword"],
+    nouns: { swarmer: "Iskrzyk", ranged: "Łuska", bruiser: "Skorupiec", caster: "Pustogłos", bomber: "Meteoryt" },
+    signature: "thorns",
+    hpMult: 1.16,
+    damageMult: 0.84,
+    speedMult: 0.92,
+    armorBonus: 3,
+    scale: 1.08,
+  },
+];
+
+/**
+ * Przydomek drugiego cyklu. Dopełniacz („z Głębi") nie odmienia się z rodzajem
+ * rzeczownika, więc pasuje i do „Kąsacza", i do „Zjawy" — przymiotnik nie pasuje.
+ */
+const CYCLE_EPITHETS = ["", "z Głębi", "z Zaświatów"];
+
+/**
+ * Szablon gatunku dla etapu (od 1). Etap 0 to ręczny roster: gobliny i orki.
+ *
+ * Etap jest tu **domykany do zakresu**, bo liczba potrafi przyjść z zapisu:
+ * starszy zapis bez pola `bossesDefeated` dawał `NaN`, a `SPECIES[NaN]` to
+ * `undefined` — funkcja o typie zwrotnym `SpeciesTemplate` zwracała nic
+ * i wywalała cały start gry na brakującym polu w zapisie.
+ */
+export function speciesTemplateFor(stage: number): SpeciesTemplate {
+  const safe = Number.isFinite(stage) ? Math.max(1, Math.floor(stage)) : 1;
+  return SPECIES[(safe - 1) % SPECIES.length]!;
+}
+
+/** Nazwa gatunku etapu — drugi cykl ma własną, ręcznie napisaną formę. */
+export function speciesNameFor(stage: number): string {
+  const t = speciesTemplateFor(stage);
+  const safe = Number.isFinite(stage) ? Math.max(1, Math.floor(stage)) : 1;
+  const cycle = Math.floor((safe - 1) / SPECIES.length);
+  return cycle === 0 ? t.name : t.elderName;
+}
+
+/**
+ * Siła gatunku etapu. Ten sam współczynnik co u sług bossów (1.3 na tier), ale
+ * na etap wypadają dwa tiery — gatunek etapu k jest więc porównywalny z tym,
+ * co odblokowuje boss tieru 2k. Bez tego dwie ścieżki progresji rozjechałyby się.
+ */
+function speciesGrowth(stage: number): number {
+  return Math.pow(1.3, stage * 2);
+}
+
+function makeSpeciesUnit(
+  stage: number,
+  archetype: UnitArchetype,
+  slot: number,
+  rng: Rng,
+): EnemyDef {
+  const sp = speciesTemplateFor(stage);
+  const cycle = Math.floor(Math.max(0, stage - 1) / SPECIES.length);
+  const epithet = CYCLE_EPITHETS[Math.min(cycle, CYCLE_EPITHETS.length - 1)]!;
+  const base = UNIT_BASE[archetype];
+  const growth = speciesGrowth(stage);
+  const tier = stage * 2;
+
+  // Sygnatura gatunku, ale tylko tam, gdzie symulacja ją naprawdę wykona.
+  const signature = traitFits(sp.signature, archetype) ? sp.signature : null;
+  const traits =
+    signature && rng.chance(0.7)
+      ? makeTrait(signature, rng, tier)
+      : rng.chance(0.3)
+        ? pickAttributes(rng, tier, 1, false, (t) => traitFits(t, archetype))
+        : {};
+
+  return {
+    id: `unit_s${stage}_${slot}`,
+    name: epithet ? `${sp.nouns[archetype]} ${epithet}` : sp.nouns[archetype],
+    archetype,
+    hp: Math.round(base.hp * sp.hpMult * growth),
+    damage: Math.round(base.damage * sp.damageMult * Math.pow(1.16, tier)),
+    poise: Math.round(base.poise * (1 + sp.armorBonus * 0.08)),
+    armor: Math.round(sp.armorBonus + tier * (archetype === "bruiser" ? 1 : 0.5)),
+    xp: Math.round(base.xp * growth),
+    gold: Math.round(14 * growth),
+    radius: base.radius * (archetype === "bruiser" ? sp.scale : 1),
+    mass: base.mass * sp.scale,
+    moveSpeed: rng.range(base.speed[0], base.speed[1]) * sp.speedMult,
+    color: sp.color,
+    cost: base.cost,
+    attack: unitAttack(archetype, rng),
+    traits,
+    dropChance: base.dropChance,
+    appearance: {
+      build: base.build,
+      head: rng.pick(sp.heads),
+      weapon: unitWeapon(archetype, rng, sp.melee),
+      accent: sp.accent,
+      scale: sp.scale * (archetype === "bruiser" ? 1.1 : 1),
     },
   };
 }
@@ -472,6 +1012,20 @@ export interface Bestiary {
   bosses: EnemyDef[];
   /** `unlocks[t]` wchodzi do puli po pokonaniu bossa tieru `t+1`. */
   unlocks: EnemyDef[][];
+  /**
+   * `species[k]` to gatunek etapu `k+1` — pełny skład fali (jedna jednostka na
+   * archetyp), który zastępuje poprzedni co dziesięć rund, po dwóch bossach.
+   */
+  species: EnemyDef[][];
+  /** Metryczka gatunków w tej samej kolejności co `species` — dla HUD-u. */
+  speciesInfo: {
+    stage: number;
+    id: string;
+    name: string;
+    tell: string;
+    color: number;
+    accent: number;
+  }[];
 }
 
 /**
@@ -479,9 +1033,14 @@ export interface Bestiary {
  * ale `defIdx` encji to indeks w `enemyDefs` — tablica musi mieć ten sam
  * kształt w każdej sesji, inaczej wczytany zapis wskazywałby na innego potwora.
  */
-export function generateBestiary(seed: number, tiers = MAX_BOSS_TIERS): Bestiary {
+export function generateBestiary(
+  seed: number,
+  tiers = MAX_BOSS_TIERS,
+  speciesCount = MAX_SPECIES,
+): Bestiary {
   const bosses: EnemyDef[] = [];
   const unlocks: EnemyDef[][] = [];
+  const usedBossNames = new Set<string>();
 
   /*
    * Talia zestawów: tasujemy ją i rozdajemy po kolei, dobierając nową po
@@ -511,7 +1070,7 @@ export function generateBestiary(seed: number, tiers = MAX_BOSS_TIERS): Bestiary
     // Osobny strumień na tier: dołożenie tieru na końcu nie przesuwa
     // wcześniejszych potworów, więc zapisy pozostają zgodne.
     const rng = new Rng((seed ^ 0x51ed270b) + tier * 0x9e3779b9);
-    bosses.push(makeBoss(tier, kit, rng));
+    bosses.push(makeBoss(tier, kit, rng, usedBossNames));
 
     const batch: EnemyDef[] = [];
     for (let slot = 0; slot < UNLOCKS_PER_BOSS; slot++) {
@@ -520,6 +1079,29 @@ export function generateBestiary(seed: number, tiers = MAX_BOSS_TIERS): Bestiary
     unlocks.push(batch);
   }
 
-  return { bosses, unlocks };
+  // Gatunki: osobny strumień na etap, z tego samego powodu co tiery — dołożenie
+  // etapu nie może przesunąć wcześniejszych, bo `defIdx` to indeks w tablicy.
+  const species: EnemyDef[][] = [];
+  const speciesInfo: Bestiary["speciesInfo"] = [];
+  for (let stage = 1; stage <= speciesCount; stage++) {
+    const rng = new Rng((seed ^ 0x2c9277b5) + stage * 0x85ebca6b);
+    const units: EnemyDef[] = [];
+    for (let slot = 0; slot < UNITS_PER_SPECIES; slot++) {
+      units.push(makeSpeciesUnit(stage, UNIT_ARCHETYPES[slot % UNIT_ARCHETYPES.length]!, slot, rng));
+    }
+    species.push(units);
+
+    const tpl = speciesTemplateFor(stage);
+    speciesInfo.push({
+      stage,
+      id: tpl.id,
+      name: speciesNameFor(stage),
+      tell: tpl.tell,
+      color: tpl.color,
+      accent: tpl.accent,
+    });
+  }
+
+  return { bosses, unlocks, species, speciesInfo };
 }
 

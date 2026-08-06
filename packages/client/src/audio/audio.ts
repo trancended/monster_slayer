@@ -649,6 +649,37 @@ export class AudioEngine {
         this.tone({ freq: 90, to: 150, dur: 0.7, type: "sawtooth", gain: 0.16, bus: "ui", reverb: 0.4 });
         this.noise({ dur: 0.6, gain: 0.1, filter: 300, filterTo: 900, q: 0.7, bus: "ui", reverb: 0.4, attack: 0.15 });
         break;
+      // Przejście na nową arenę: niskie uderzenie plus wznoszący szum, jakby
+      // świat przesunął się o jedną planszę. Osobno od `waveStart`, bo to dwa
+      // różne komunikaty i nie mogą się zlewać.
+      case "arenaShift":
+        this.duck(0.7);
+        this.tone({ freq: 62, to: 116, dur: 1.1, type: "sine", gain: 0.2, bus: "ui", reverb: 0.55 });
+        this.noise({ dur: 1.0, gain: 0.09, filter: 220, filterTo: 2400, q: 0.8, bus: "ui", reverb: 0.5, attack: 0.35 });
+        [392, 523, 659].forEach((f, i) =>
+          this.tone({ freq: f, dur: 0.5, type: "triangle", gain: 0.07, bus: "ui", delay: 0.12 + i * 0.09, reverb: 0.45 }),
+        );
+        break;
+      // Kowal. Rdzeń brzmi metalicznie i krótko, otwarcie warsztatu — pełnym
+      // akordem, samo przekucie — uderzeniem młota z narastającym pogłosem.
+      case "forgeCore":
+        this.tone({ freq: 880, dur: 0.18, type: "triangle", gain: 0.12, bus: "ui", reverb: 0.3 });
+        this.tone({ freq: 1320, dur: 0.22, type: "sine", gain: 0.08, bus: "ui", delay: 0.06, reverb: 0.35 });
+        break;
+      case "forgeUnlock":
+        this.duck(0.5);
+        [523, 659, 784, 1047].forEach((f, i) =>
+          this.tone({ freq: f, dur: 0.5, type: "triangle", gain: 0.11, bus: "ui", delay: i * 0.08, reverb: 0.45 }),
+        );
+        break;
+      case "forge":
+        this.duck(0.4);
+        this.noise({ dur: 0.3, gain: 0.16, filter: 900, filterTo: 220, q: 1.2, bus: "ui", reverb: 0.4 });
+        this.tone({ freq: 140, to: 90, dur: 0.5, type: "sawtooth", gain: 0.16, bus: "ui", reverb: 0.5 });
+        [784, 1047, 1568].forEach((f, i) =>
+          this.tone({ freq: f, dur: 0.6, type: "sine", gain: 0.09, bus: "ui", delay: 0.18 + i * 0.07, reverb: 0.5 }),
+        );
+        break;
       case "comboTier":
         [784, 1047, 1319].forEach((f, i) =>
           this.tone({ freq: f, dur: 0.16, type: "triangle", gain: 0.13, bus: "ui", delay: i * 0.045, reverb: 0.2 }),

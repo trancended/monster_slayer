@@ -45,11 +45,21 @@ import "@babylonjs/core/Culling/ray";
 import "@babylonjs/core/Meshes/instancedMesh";
 import "@babylonjs/core/Meshes/thinInstanceMesh";
 
-import { ARENA_RADIUS, damp, EState, Flag, Kind, PState, type World } from "@ms/core";
+import {
+  ARENA_RADIUS,
+  damp,
+  EState,
+  Flag,
+  Kind,
+  PState,
+  type ArenaLayout,
+  type World,
+} from "@ms/core";
 import { Camera3d } from "./camera3d.ts";
 import { Particles3d } from "./particles3d.ts";
 import { Overlay2d, type ThreatArrow } from "./overlay2d.ts";
 import {
+  BASE_EXPOSURE,
   buildScene,
   createEngine,
   PALETTE,
@@ -80,6 +90,9 @@ const FX = {
   death: 0xffffff,
   telegraph: 0xff5544,
 } as const;
+
+/** Ile trwa rozbłysk wejścia na nową arenę. */
+const ARENA_FADE = 0.85;
 
 const RARITY_COLORS: Record<string, number> = {
   common: 0x9aa3b2,
@@ -161,6 +174,9 @@ export class Renderer3d {
   /** Współdzielony materiał cieni kropelkowych — jeden na całą scenę. */
   private blobMat: StandardMaterial | null = null;
   private readonly glowMats = new Map<string, StandardMaterial>();
+
+  /** Zegar rozbłysku po wejściu na nową arenę. 0 = brak przejścia. */
+  private arenaFade = 0;
 
   private host!: HTMLElement;
   private canvas!: HTMLCanvasElement;
@@ -373,6 +389,7 @@ export class Renderer3d {
 
   destroy(): void {
     window.removeEventListener("resize", this.onResize);
+    this.bundle?.arena.dispose();
     this.particles?.dispose();
     this.overlay?.dispose();
     this.scene?.dispose();
@@ -411,12 +428,16 @@ export class Renderer3d {
     this.particles.update(dt);
     this.syncArrows(world, px, py);
 
-    // Rant areny oddycha — dwa okresy, żeby puls nie był metronomem.
-    const rimMat = this.bundle.arenaRim.material as StandardMaterial | null;
+    // Rant areny oddycha — dwa okresy, żeby puls nie był metronomem. Kolor
+    // przynosi biom, więc rant lodowca świeci inaczej niż rant kuźni.
+    const rimMat = this.bundle.arena.rim.material as StandardMaterial | null;
     if (rimMat) {
       const k = 0.5 + Math.sin(this.elapsed * 1.1) * 0.16 + Math.sin(this.elapsed * 2.7) * 0.08;
-      rimMat.emissiveColor = toColor3(PALETTE.rim).scale(k);
+      // Przy wejściu na nową arenę rant rozbłyska i gaśnie do zwykłego pulsu.
+      const flash = this.arenaFade > 0 ? 1 + (this.arenaFade / ARENA_FADE) * 1.6 : 1;
+      rimMat.emissiveColor = toColor3(this.bundle.arena.rimColor).scale(k * flash);
     }
+    this.updateArenaFade(dt);
 
     this.overlay.update(dt, this.projectPoint);
     this.scene.render();
@@ -554,16 +575,27 @@ export class Renderer3d {
           ? 0xffc94a
           : payload?.type === "potion"
             ? 0xff5f7a
-            : (RARITY_COLORS[payload?.item?.rarity ?? "common"] ?? 0xffffff);
+            : payload?.type === "core"
+              ? 0xffb03d
+              : (RARITY_COLORS[payload?.item?.rarity ?? "common"] ?? 0xffffff);
 
-      const shard = CreateCylinder(`pk${id}`, { diameterTop: 0, diameterBottom: 0.36, height: 0.5, tessellation: 4 }, this.scene);
+      // Rdzeń kowala ma własną bryłę: gruby, kanciasty kloc zamiast smukłego
+      // ostrosłupa łupu. Waluta warsztatu musi być rozpoznawalna z dystansu,
+      // bo to jedyna rzecz na arenie, której nie wolno przegapić.
+      const shard =
+        payload?.type === "core"
+          ? CreateCylinder(`pk${id}`, { diameterTop: 0.3, diameterBottom: 0.42, height: 0.42, tessellation: 6 }, this.scene)
+          : CreateCylinder(`pk${id}`, { diameterTop: 0, diameterBottom: 0.36, height: 0.5, tessellation: 4 }, this.scene);
       shard.material = this.glowMat(hex);
       shard.isPickable = false;
       root = shard;
 
       // Słup światła nad rzadkim łupem (GDD §10.2) — w 3D czyta się dużo
-      // mocniej niż płaski pasek w 2D.
-      if (payload?.item && (payload.item.rarity === "epic" || payload.item.rarity === "legendary")) {
+      // mocniej niż płaski pasek w 2D. Rdzeń dostaje go zawsze.
+      if (
+        payload?.type === "core" ||
+        (payload?.item && (payload.item.rarity === "epic" || payload.item.rarity === "legendary"))
+      ) {
         const beam = CreatePlane(`bm${id}`, { width: 0.5, height: 7 }, this.scene);
         beam.material = this.glowMat(hex, 0.2, true);
         beam.parent = shard;
@@ -988,6 +1020,39 @@ export class Renderer3d {
       speed: 4, lift: 4.6, color,
       size: 0.11, life: 0.6, gravity: 9, drag: 0.4, shrink: true,
     });
+  }
+
+  // ────────────────────────────────────────────────── przejście na arenę
+
+  /**
+   * Wstawia nową arenę i odpala **przejście**: rozbłysk kadru, fala biegnąca
+   * przez całą arenę i kopniak kamery.
+   *
+   * Efekt jest „przybyciem", nie „zniknięciem": zdarzenie z rdzenia przychodzi,
+   * gdy arena jest już wymieniona, więc wygaszanie *przed* zmianą wymagałoby
+   * wstrzymania symulacji na pół sekundy. Rozbłysk po fakcie czyta się jak
+   * wyjście z portalu i nie kosztuje ani klatki rozgrywki.
+   */
+  setArena(layout: ArenaLayout, transition = true): void {
+    this.bundle.setArena(layout);
+    if (!transition) return;
+
+    this.arenaFade = ARENA_FADE;
+    this.shockwave(0, 0, ARENA_RADIUS * 0.98, this.bundle.arena.rimColor, 0.85);
+    this.camera.addTrauma(0.35, 0, 0, 6);
+  }
+
+  /**
+   * Wygaszanie rozbłysku. Ekspozycja jest w potoku post-processingu, którego na
+   * progu `minimal` w ogóle nie ma — tam przejście niesie sama fala i rant.
+   */
+  private updateArenaFade(dt: number): void {
+    if (this.arenaFade <= 0) return;
+    this.arenaFade = Math.max(0, this.arenaFade - dt);
+    const ip = this.bundle.pipeline.imageProcessing;
+    if (!ip) return;
+    const t = this.arenaFade / ARENA_FADE;
+    ip.exposure = BASE_EXPOSURE * (1 + t * t * 0.45);
   }
 
   private shockwave(x: number, y: number, radius: number, color: number, life: number): void {

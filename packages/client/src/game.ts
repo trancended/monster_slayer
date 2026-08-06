@@ -8,10 +8,15 @@ import {
   FIXED_DT,
   Kind,
   PState,
+  normalizeCharacter,
   traitLabels,
   World,
   xpToNext,
+  FORGE_JUNK_RARITIES,
+  FORGE_POWER,
+  FORGE_TARGET_POWER,
   type Balance,
+  type EnemyDef,
   type Item,
 } from "@ms/core";
 import { FixedLoop } from "./loop.ts";
@@ -46,13 +51,28 @@ import type { idle as idleNs } from "@ms/core";
 /**
  * Z czego zbudowany jest wróg — decyduje o ogonie dźwięku uderzenia.
  * Szkielety brzmią kością, rycerz pancerzem, pełzacz jadem, reszta ciałem.
+ *
+ * Dla potworów generowanych (gatunki, słudzy bossów) nie ma listy identyfikatorów,
+ * więc materiał czytamy z **opisu wyglądu**: czaszka to kość, hełm i rogi to
+ * pancerz, głowa owada to jad. To ten sam opis, z którego renderer lepi bryłę,
+ * więc dźwięk i sylwetka nie mogą się rozjechać.
  */
-function hitMaterial(enemyId: string | undefined): HitMaterial {
-  if (!enemyId) return "flesh";
-  if (enemyId.startsWith("skeleton")) return "bone";
-  if (enemyId === "rot_knight") return "metal";
-  if (enemyId === "plague_crawler") return "toxic";
-  return "flesh";
+function hitMaterial(def: EnemyDef | undefined): HitMaterial {
+  if (!def) return "flesh";
+  if (def.id.startsWith("skeleton")) return "bone";
+  if (def.id === "rot_knight") return "metal";
+  if (def.id === "plague_crawler") return "toxic";
+  switch (def.appearance?.head) {
+    case "skull":
+      return "bone";
+    case "helmet":
+    case "horned":
+      return "metal";
+    case "insect":
+      return "toxic";
+    default:
+      return "flesh";
+  }
 }
 
 // `pagehide` nie zdąży dokończyć asynchronicznego zapisu do IndexedDB, więc
@@ -106,11 +126,17 @@ export class Game {
     });
 
     if (save) {
-      this.world.character = save.character;
+      // Zapis jest starszy od kodu przy każdej aktualizacji — normalizacja dopełnia
+      // pola, których wtedy nie było (rdzenie kowala, licznik bossów). Bez niej
+      // brakujące pole trafiało do arytmetyki jako `undefined` i gra nie wstawała.
+      this.world.character = normalizeCharacter(save.character, this.balance);
       this.world.encounter.index = Math.max(0, save.encounterIndex - 1);
       this.world.refreshDerived();
       this.world.store.hp[this.world.player] = this.world.derived.maxHp;
       this.world.sessionKills = save.stats.kills;
+      // Arena wynika z numeru rundy, więc nie ma jej w zapisie — trzeba ją
+      // przeliczyć po wczytaniu, inaczej wracamy na planszę z pierwszej rundy.
+      this.world.resetArena();
     }
 
     this.renderer = new Renderer();
@@ -118,6 +144,8 @@ export class Game {
     // równoległy to różne kamery, a nie przełącznik na gotowej.
     this.renderer.cameraMode = settings.cameraMode;
     await this.renderer.init(stageEl, this.balance.combat.gameFeel);
+    // Bez efektu przejścia: wejście do gry nie jest przeprowadzką na nową arenę.
+    this.renderer.setArena(this.world.arena, false);
 
     this.input = new InputManager(stageEl, {
       onMenuToggle: () => this.toggleMenu(),
@@ -179,8 +207,11 @@ export class Game {
       // Dźwięk trafienia zna materiał celu — kość brzmi inaczej niż pancerz.
       // Rdzeń emituje tylko generyczne `hit`, bo nie ma pojęcia o warstwie audio;
       // wzbogacenie robi klient, tam gdzie i tak trzyma definicje wrogów.
+      // `defIdx` indeksuje `world.enemyDefs` (roster + bestiariusz + gatunki),
+      // a nie sam ręczny roster — wcześniej każdy generowany potwór brzmiał
+      // „ciałem", bo indeks wypadał poza tablicę.
       audio.hit({
-        material: hitMaterial(this.balance.enemies.roster[s.defIdx[e.entity]!]?.id),
+        material: hitMaterial(this.world.enemyDefs[s.defIdx[e.entity]!]),
         power,
         crit: e.crit,
         at: { x: e.x, y: e.y },
@@ -188,7 +219,9 @@ export class Game {
     });
 
     bus.on("enemy:died", (e) => {
-      const def = this.balance.enemies.roster.find((d) => d.id === e.typeId);
+      // Szukamy w pełnej tablicy definicji: gatunki i słudzy bossów nie są
+      // w ręcznym rosterze, a to od ich koloru zależy barwa rozprysku.
+      const def = this.world.enemyDefs.find((d) => d.id === e.typeId);
       this.renderer.spawnDeathFx(e.x, e.y, def?.color ?? 0xcccccc, e.elite);
     });
 
@@ -241,6 +274,41 @@ export class Game {
       audio.setMood("explore");
       recordEvent("wave_cleared", { wave: e.wave });
       void this.save();
+    });
+
+    /*
+     * Wygrany poziom → nowa arena. Renderer przebudowuje przeszkody, a przy
+     * zmianie biomu także kolory i horyzont; HUD dostaje nazwę miejsca.
+     *
+     * Kolejność jest istotna: rdzeń wymienił już `world.arena`, więc renderer
+     * czyta go bezpośrednio, a nie odtwarza z pól zdarzenia. Zdarzenie mówi
+     * „co się stało", stan trzyma symulacja.
+     */
+    bus.on("arena:changed", (e) => {
+      this.renderer.setArena(this.world.arena);
+      audio.play("arenaShift");
+      pushToast(
+        e.newBiome
+          ? `Nowa kraina: ${e.biomeName} — poziom ${e.zoneLevel}`
+          : `Nowa arena: ${e.biomeName} ${e.round} — poziom ${e.zoneLevel}`,
+        e.newBiome ? "level" : "wave",
+      );
+      recordEvent("arena_changed", { round: e.round, biome: e.biomeId, newBiome: e.newBiome });
+    });
+
+    // Co dziesięć rund (dwóch bossów) arenę zalewa inny, mocniejszy gatunek.
+    // To najmocniejszy sygnał postępu w grze, więc dostaje pełną zapowiedź:
+    // nazwę, jednozdaniową taktykę i skład.
+    bus.on("species:changed", (e) => {
+      audio.setMood("boss");
+      audio.play("arenaShift");
+      pushToast(`Nowy gatunek: ${e.name}`, "level");
+      if (e.tell) pushToast(e.tell, "info");
+      const sklad = e.units
+        .map((u) => (u.traits.length > 0 ? `${u.name} (${u.traits.join(", ")})` : u.name))
+        .join(", ");
+      if (sklad) pushToast(`Skład: ${sklad}`, "info");
+      recordEvent("species_changed", { stage: e.stage, name: e.name });
     });
 
     // Most walka → idle. Klient raportuje FAKT zabicia, nie wynik ekonomiczny;
@@ -328,6 +396,25 @@ export class Game {
     bus.on("boss:died", () => {
       hud.bossName = "";
       audio.setMood("explore");
+      void this.save();
+    });
+
+    // ── kowal ─────────────────────────────────────────────────────────────
+    bus.on("forge:core", (e) => {
+      this.syncForge();
+      if (e.first) {
+        pushToast("Rdzeń kowala — warsztat otwarty (Ekwipunek)", "level");
+        pushToast("Przekuj zbędne wyposażenie w legendę", "info");
+      } else {
+        pushToast(`Rdzeń kowala ×${e.total}`, "loot", "epic");
+      }
+      recordEvent("forge_core", { total: e.total });
+      void this.save();
+    });
+
+    bus.on("forge:reforged", (e) => {
+      pushToast(`Przekuto: ${e.name} (poz. ${e.itemLevel})`, "loot", "legendary");
+      recordEvent("forge_reforged", { consumed: e.consumed, itemLevel: e.itemLevel });
       void this.save();
     });
 
@@ -439,6 +526,12 @@ export class Game {
     hud.attributes = { ...ch.attributes };
     hud.encounter = w.encounter.index;
     hud.zoneLevel = w.encounter.zoneLevel;
+    // Miejsce i gatunek czytamy ze stanu świata, a nie ze zdarzeń: po wczytaniu
+    // zapisu żadne zdarzenie nie poleciało, a HUD i tak musi wiedzieć, gdzie jest.
+    hud.arenaName = w.arena.biome.name;
+    hud.arenaRound = w.arena.round;
+    hud.arenaIndex = w.arena.biomeIndex;
+    hud.speciesName = w.speciesName;
     hud.enemiesLeft = w.encounter.remaining;
     hud.intermission = w.encounter.active ? 0 : Math.max(0, w.encounter.intermission);
     hud.heavyCharge = s.state[w.player] === PState.HeavyCharge ? w.heavyChargeRatio : 0;
@@ -475,9 +568,17 @@ export class Game {
       audio.setLowHealth(low);
     }
 
+    hud.forgeCores = ch.forgeCores;
+    hud.smithUnlocked = ch.smithUnlocked;
+
     if (full) {
       hud.equipment = { ...ch.equipment };
       hud.inventory = [...ch.inventory];
+      // Przedmioty ze stosu mogły zniknąć (sprzedaż, założenie) — czyścimy
+      // wybór z martwych identyfikatorów, żeby wycena nie kłamała.
+      const alive = new Set(ch.inventory.map((it) => it.id));
+      hud.forgePick = hud.forgePick.filter((id) => alive.has(id));
+      hud.forgeQuote = w.forgeQuoteFor(hud.forgePick);
     } else if (hud.inventory.length !== ch.inventory.length) {
       hud.inventory = [...ch.inventory];
     }
@@ -654,6 +755,63 @@ export class Game {
     this.syncHud(true);
     audio.play("gold");
     void this.save();
+  }
+
+  // ────────────────────────────────────────────────────────────── kowal
+
+  /** Dorzuca albo zdejmuje przedmiot ze stosu do przekucia. */
+  toggleForge(item: Item): void {
+    const at = hud.forgePick.indexOf(item.id);
+    if (at >= 0) hud.forgePick.splice(at, 1);
+    else hud.forgePick.push(item.id);
+    audio.play("uiClick");
+    this.syncForge();
+  }
+
+  clearForge(): void {
+    hud.forgePick = [];
+    this.syncForge();
+  }
+
+  /**
+   * „Wybierz zbędne": dokłada niezałożone przedmioty od najtańszych, dopóki nie
+   * uzbiera progu. Od najtańszych, bo automat ma zjadać śmieci, a nie epiki —
+   * gracz, który kliknie to bez patrzenia, nie może stracić czegoś dobrego.
+   */
+  autoPickForge(): void {
+    const junk = this.world.character.inventory
+      .filter((it) => FORGE_JUNK_RARITIES.includes(it.rarity))
+      .sort((a, b) => FORGE_POWER[a.rarity] - FORGE_POWER[b.rarity]);
+
+    const picked: string[] = [];
+    let power = 0;
+    for (const item of junk) {
+      if (power >= FORGE_TARGET_POWER) break;
+      picked.push(item.id);
+      power += FORGE_POWER[item.rarity];
+    }
+    hud.forgePick = picked;
+    audio.play("uiClick");
+    this.syncForge();
+  }
+
+  reforge(): void {
+    const result = this.world.reforge(hud.forgePick);
+    if (!result.ok) {
+      pushToast(result.message, "info");
+      return;
+    }
+    hud.forgePick = [];
+    this.syncHud(true);
+    this.syncForge();
+    void this.save();
+  }
+
+  /** Przelicza wycenę po każdej zmianie stosu — panel pokazuje, czego brakuje. */
+  private syncForge(): void {
+    hud.forgeCores = this.world.character.forgeCores;
+    hud.smithUnlocked = this.world.character.smithUnlocked;
+    hud.forgeQuote = this.world.forgeQuoteFor(hud.forgePick);
   }
 
   sellAll(rarities: string[]): void {

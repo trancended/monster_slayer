@@ -2,7 +2,7 @@
  * Stan HUD-u jako runes Svelte 5. Overlay DOM aktualizowany ~20 Hz;
  * pętla symulacji nigdy nie czeka na DOM (budżet §11.6: DOM ≤ 1 ms/klatkę).
  */
-import type { Item, ItemRarityId } from "@ms/core";
+import { forgeQuote, type ForgeQuote, type Item, type ItemRarityId } from "@ms/core";
 import { DEFAULT_SETTINGS, type GameSettings } from "../save/save.ts";
 
 export type Screen =
@@ -53,6 +53,13 @@ export const hud = $state({
   enemiesLeft: 0,
   intermission: 0,
 
+  // — miejsce i przeciwnik. Arena zmienia się po każdym wygranym poziomie,
+  //   biom co pięć rund, gatunek co dziesięć (po dwóch bossach).
+  arenaName: "",
+  arenaRound: 1,
+  arenaIndex: 1,
+  speciesName: "",
+
   bossName: "",
   bossHp: 0,
   bossMaxHp: 0,
@@ -84,6 +91,13 @@ export const hud = $state({
 
   equipment: {} as Record<string, Item | undefined>,
   inventory: [] as Item[],
+
+  // — kowal. `forgePick` to identyfikatory przedmiotów odłożonych do przekucia;
+  //   wycenę liczy rdzeń, więc panel nie zgaduje niczego sam.
+  forgeCores: 0,
+  smithUnlocked: false,
+  forgePick: [] as string[],
+  forgeQuote: forgeQuote([], 0) as ForgeQuote,
 
   settings: { ...DEFAULT_SETTINGS } as GameSettings,
 

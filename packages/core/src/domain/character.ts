@@ -30,6 +30,20 @@ export interface CharacterState {
    * sam bestiariusz odtwarza się z ziarna i niczego nie zajmuje.
    */
   bossesDefeated: number;
+  /**
+   * Rdzenie kowala — wypadają z bossów i są zużywane przy przekuwaniu
+   * (patrz `sim/smith.ts`). Waluta warsztatu, nie ekwipunek: nie zajmuje slotu
+   * i nie da się jej sprzedać.
+   */
+  forgeCores: number;
+  /**
+   * Czy warsztat kowala jest już otwarty. Trzymane osobno od licznika rdzeni,
+   * bo warsztat raz odkryty ma zostać widoczny także po wydaniu wszystkich
+   * rdzeni — inaczej panel znikałby graczowi na oczach po każdym przekuciu.
+   */
+  smithUnlocked: boolean;
+  /** Ile legend wyszło z warsztatu. Statystyka do ekranu postaci. */
+  forgedLegendaries: number;
 }
 
 export interface DerivedStats {
@@ -64,6 +78,43 @@ export function createCharacter(balance: Balance): CharacterState {
     killsWithoutDrop: 0,
     totalKills: 0,
     bossesDefeated: 0,
+    forgeCores: 0,
+    smithUnlocked: false,
+    forgedLegendaries: 0,
+  };
+}
+
+/**
+ * Dopełnia wczytaną postać brakującymi polami.
+ *
+ * Zapis jest starszy od kodu przy każdej aktualizacji, a brak pola nie ma prawa
+ * być błędem krytycznym (DoD §18.5). Wcześniej brakujące `bossesDefeated`
+ * przechodziło jako `undefined` do arytmetyki, dawało `NaN` i **gra nie wstawała
+ * wcale** — na jednym brakującym liczniku.
+ */
+export function normalizeCharacter(raw: Partial<CharacterState>, balance: Balance): CharacterState {
+  const base = createCharacter(balance);
+  const num = (value: unknown, fallback: number): number =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+  return {
+    ...base,
+    ...raw,
+    level: Math.max(1, num(raw.level, base.level)),
+    xp: Math.max(0, num(raw.xp, 0)),
+    attributes: { ...base.attributes, ...(raw.attributes ?? {}) },
+    attributePoints: Math.max(0, num(raw.attributePoints, 0)),
+    skillPoints: Math.max(0, num(raw.skillPoints, 0)),
+    gold: Math.max(0, num(raw.gold, 0)),
+    potions: Math.max(0, num(raw.potions, base.potions)),
+    equipment: raw.equipment ?? {},
+    inventory: Array.isArray(raw.inventory) ? raw.inventory : [],
+    killsWithoutDrop: Math.max(0, num(raw.killsWithoutDrop, 0)),
+    totalKills: Math.max(0, num(raw.totalKills, 0)),
+    bossesDefeated: Math.max(0, num(raw.bossesDefeated, 0)),
+    forgeCores: Math.max(0, num(raw.forgeCores, 0)),
+    smithUnlocked: raw.smithUnlocked === true || num(raw.forgeCores, 0) > 0,
+    forgedLegendaries: Math.max(0, num(raw.forgedLegendaries, 0)),
   };
 }
 

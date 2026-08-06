@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { affixText, itemScore, type Item } from "@ms/core";
+  import { affixText, itemScore, itemsNeeded, FORGE_POWER, type Item } from "@ms/core";
   import { hud, RARITY_HEX } from "./state.svelte.ts";
   import type { Game } from "../game.ts";
 
@@ -23,6 +23,11 @@
     { key: "vitality", label: "Wytrzymałość", desc: "+9 max HP, +3 stamina, +1.2 pancerza" },
     { key: "will", label: "Wola", desc: "+1.2% obr. żywiołowych, −0.4% cooldownów" },
   ] as const;
+
+  /** Czy przedmiot leży na kowadle. */
+  function picked(item: Item): boolean {
+    return hud.forgePick.includes(item.id);
+  }
 
   function comparison(item: Item): number {
     const equipped = hud.equipment[item.slot];
@@ -112,10 +117,52 @@
             Sprzedaj zwykłe i niezwykłe
           </button>
         </div>
+
+        <!--
+          Kowal. Panel pojawia się dopiero po pierwszym rdzeniu z bossa — dopóki
+          gracz nie ma z czego kuć, pusty warsztat byłby tylko szumem w kadrze.
+        -->
+        {#if hud.smithUnlocked}
+          {@const q = hud.forgeQuote}
+          <section class="smith" class:ready={q.ready}>
+            <header class="smithhead">
+              <h3>Kowal</h3>
+              <span class="mono cores">Rdzenie: {hud.forgeCores}</span>
+            </header>
+            <div class="bar" aria-hidden="true">
+              <i style="width:{Math.min(100, (q.power / q.target) * 100)}%"></i>
+            </div>
+            <div class="smithinfo mono">
+              Moc {q.power} / {q.target} · na kowadle: {hud.forgePick.length}
+            </div>
+            {#if q.ready}
+              <p class="smithnote ok">Gotowe — wyjdzie losowa legenda.</p>
+            {:else}
+              <p class="smithnote muted">
+                {q.reason || `Odłóż przedmioty: ${itemsNeeded("common")} zwykłych albo ${itemsNeeded("epic")} epickich`}
+              </p>
+            {/if}
+            <div class="smithbtns">
+              <button
+                class="primary"
+                disabled={!q.ready}
+                onclick={() => game.reforge()}
+              >Przekuj w legendę</button>
+              <button class="ghost small" onclick={() => game.autoPickForge()}>Wybierz zbędne</button>
+              {#if hud.forgePick.length > 0}
+                <button class="ghost small" onclick={() => game.clearForge()}>Zdejmij z kowadła</button>
+              {/if}
+            </div>
+          </section>
+        {/if}
         <div class="items">
           {#each hud.inventory as item (item.id)}
             {@const cmp = comparison(item)}
-            <article class="item" style="--rarity:{RARITY_HEX[item.rarity]}">
+            <article
+              class="item"
+              class:picked={picked(item)}
+              style="--rarity:{RARITY_HEX[item.rarity]}"
+            >
               <header class="ihead">
                 <span class="name">{item.name}</span>
                 <span class="mono lvl">i{item.itemLevel}</span>
@@ -138,6 +185,15 @@
                   {#if cmp > 0}<span class="up">▲</span>{:else if cmp < 0}<span class="down">▼</span>{/if}
                 </button>
                 <button class="ghost" onclick={() => game.sell(item)}>Sprzedaj {item.sellValue}</button>
+                {#if hud.smithUnlocked}
+                  <button
+                    class="ghost forge"
+                    onclick={() => game.toggleForge(item)}
+                    title="Moc przekucia: {FORGE_POWER[item.rarity]}"
+                  >
+                    {picked(item) ? "− z kowadła" : `+ na kowadło (${FORGE_POWER[item.rarity]})`}
+                  </button>
+                {/if}
               </footer>
             </article>
           {:else}
@@ -268,6 +324,83 @@
     border-radius: 8px;
     padding: 10px 12px;
     font-size: 0.82em;
+  }
+  /* Przedmiot na kowadle musi być widoczny jednym spojrzeniem: przy dwudziestu
+     odłożonych sztukach lista bez wyróżnienia jest nieczytelna. */
+  .item.picked {
+    background: rgba(255, 176, 61, 0.12);
+    border-color: #ffb03d;
+  }
+  .item.picked .forge {
+    color: #ffb03d;
+  }
+
+  /* ── kowal ─────────────────────────────────────────────────────────────── */
+  .smith {
+    margin: 0 0 10px;
+    padding: 10px 12px;
+    border: 1px solid var(--edge);
+    border-left: 3px solid #ffb03d;
+    border-radius: 8px;
+    background: rgba(255, 176, 61, 0.06);
+  }
+  .smith.ready {
+    background: rgba(255, 176, 61, 0.14);
+    box-shadow: 0 0 0 1px rgba(255, 176, 61, 0.35);
+  }
+  .smithhead {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    border: 0;
+    padding: 0;
+  }
+  .smithhead h3 {
+    margin: 0;
+    font-size: 0.95em;
+    letter-spacing: 0.04em;
+  }
+  .cores {
+    color: #ffb03d;
+  }
+  .smith .bar {
+    position: relative;
+    height: 6px;
+    margin: 8px 0 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .smith .bar i {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: linear-gradient(90deg, #ff8c1a, #ffd166);
+  }
+  .smithinfo {
+    font-size: 0.8em;
+    opacity: 0.85;
+  }
+  .smithnote {
+    margin: 4px 0 8px;
+    font-size: 0.8em;
+  }
+  .smithnote.ok {
+    color: #ffd166;
+  }
+  .smithbtns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  /* Zablokowany przycisk musi wyglądać na zablokowany. Bez tego „Przekuj"
+     świecił pełnym kolorem także wtedy, gdy brakowało mocy — gracz klikał
+     i nic się nie działo, co czyta się jak zepsuty interfejs, nie jak brak
+     materiału. */
+  .smithbtns button:disabled {
+    opacity: 0.4;
+    filter: saturate(0.35);
+    cursor: not-allowed;
   }
   .ihead { display: flex; justify-content: space-between; gap: 8px; border: 0; padding: 0; }
   .stat { color: var(--text); margin-top: 4px; }

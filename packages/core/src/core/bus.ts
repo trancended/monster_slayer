@@ -48,6 +48,46 @@ export interface GameEvents {
   };
   /** Okno się zamknęło albo gracz zginął. `count` to zerwana seria. */
   "combo:broken": { count: number; best: number };
+  /**
+   * Wygrany poziom przeniósł walkę na nową arenę: inny układ przeszkód, a co
+   * `roundsPerBiome` rund także inny biom (kolor, horyzont, roślinność).
+   * Renderer czyta z tego, co przebudować; HUD — czym to nazwać.
+   */
+  "arena:changed": {
+    round: number;
+    biomeId: string;
+    biomeName: string;
+    /** Numer biomu od początku gry, od 1. */
+    biomeIndex: number;
+    newBiome: boolean;
+    roundsPerBiome: number;
+    zoneLevel: number;
+  };
+  /**
+   * Na arenę wszedł nowy gatunek wrogów — mocniejszy od poprzedniego, o innej
+   * sylwetce i innej sygnaturze. Dzieje się co dziesięć rund, po dwóch bossach.
+   */
+  "species:changed": {
+    stage: number;
+    name: string;
+    tell: string;
+    units: { name: string; archetype: string; traits: string[] }[];
+  };
+  /**
+   * Gracz podniósł rdzeń kowala z bossa. `first` zapala się raz — przy nim
+   * otwiera się warsztat, więc to jedyny moment wart osobnej zapowiedzi.
+   */
+  "forge:core": { total: number; first: boolean; target: number };
+  /** Warsztat wypluł legendę: zbędne wyposażenie zamieniło się w coś, co się nosi. */
+  "forge:reforged": {
+    id: string;
+    name: string;
+    slot: string;
+    itemLevel: number;
+    consumed: number;
+    power: number;
+    coresLeft: number;
+  };
   "wave:cleared": { wave: number; nextIn: number };
   "wave:started": { wave: number; enemies: number; elite: boolean };
   "hitstop": { seconds: number; slowMoScale: number; slowMoDuration: number };

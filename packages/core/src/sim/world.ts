@@ -10,10 +10,22 @@ import type { Balance, EnemyDef } from "../data/schema.ts";
 import {
   generateBestiary,
   traitLabels,
+  BOSSES_PER_SPECIES,
   MAX_BOSS_TIERS,
+  MAX_SPECIES,
+  ROUNDS_PER_SPECIES,
+  UNITS_PER_SPECIES,
   UNLOCKS_PER_BOSS,
+  speciesNameFor,
   type Bestiary,
 } from "./enemygen.ts";
+import {
+  ARENA_RADIUS,
+  generateArena,
+  ROUNDS_PER_BIOME,
+  type ArenaLayout,
+  type Obstacle,
+} from "./arena.ts";
 import {
   createCharacter,
   deriveStats,
@@ -27,8 +39,14 @@ import { computeDamage, type AttackContext } from "./damage.ts";
 import { LootGenerator } from "./loot.ts";
 import { KillCombo } from "./combo.ts";
 import { updateEnemyAi } from "./ai.ts";
+import { FORGE_CORE_COST, forgeQuote, type ForgeQuote } from "./smith.ts";
 
-export const ARENA_RADIUS = 19;
+/**
+ * Promień areny mieszka teraz w `arena.ts` (obok reguł rozstawiania przeszkód),
+ * ale reeksportujemy go stąd — połowa gry importuje go z `world.ts`.
+ */
+export { ARENA_RADIUS };
+export type { Obstacle };
 
 /**
  * Zasięg automatycznego zwracania się do wroga w trybie „kierunek ruchu".
@@ -57,19 +75,31 @@ export interface PlayerIntent {
   potionPressed: boolean;
 }
 
-export interface Obstacle {
-  x: number;
-  y: number;
-  r: number;
-}
-
 export interface PickupPayload {
-  type: "gold" | "potion" | "item";
+  /** `core` to rdzeń kowala z bossa — waluta warsztatu (`sim/smith.ts`). */
+  type: "gold" | "potion" | "item" | "core";
   amount: number;
   item?: Item;
 }
 
 export const Buffered = { None: 0, Attack: 1, Dodge: 2, Potion: 3, Heavy: 4 } as const;
+
+/** Licznik z zapisu, który może być pusty albo uszkodzony. Zawsze liczba ≥ 0. */
+function count(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value as number)) : 0;
+}
+
+/**
+ * Sufit poziomu strefy. Podniesiony z 25: przy dwustu rundach areny wszystko
+ * powyżej pięćdziesiątej rundy przestawało rosnąć — wrogowie, item level łupu
+ * i nagrody stały w miejscu, więc dalsza gra nie dawała już nic poza licznikiem.
+ */
+export const MAX_ZONE_LEVEL = 60;
+
+/** Poziom strefy dla rundy: rośnie co dwie rundy, sufit `MAX_ZONE_LEVEL` (GDD §9.2). */
+export function zoneLevelFor(round: number): number {
+  return Math.min(MAX_ZONE_LEVEL, 1 + Math.floor((Math.max(1, round) - 1) / 2));
+}
 
 export interface EncounterState {
   index: number;
@@ -115,6 +145,12 @@ export class World {
   private bufferTimer = 0;
 
   readonly obstacles: Obstacle[] = [];
+  /**
+   * Aktualna arena: biom, horyzont i układ przeszkód. Wymieniana po każdym
+   * wygranym poziomie (patrz `advanceArena`). Zawartość jest wyprowadzana
+   * z `(ziarno, runda)`, więc nie trafia do zapisu — wystarczy numer rundy.
+   */
+  arena: ArenaLayout;
   readonly pickups = new Map<number, PickupPayload>();
   readonly enemyDefs: EnemyDef[];
   /**
@@ -126,6 +162,8 @@ export class World {
   readonly bestiary: Bestiary;
   /** Indeks pierwszego wygenerowanego wpisu — wszystko przed nim jest ręczne. */
   private readonly genOffset: number;
+  /** Indeks pierwszej jednostki gatunkowej w `enemyDefs`. Układ ustala konstruktor. */
+  private readonly speciesOffset: number;
 
   encounter: EncounterState = {
     index: 0,
@@ -169,25 +207,71 @@ export class World {
       ...opts.balance.enemies.roster,
       ...this.bestiary.bosses,
       ...this.bestiary.unlocks.flat(),
+      ...this.bestiary.species.flat(),
     ];
+    this.speciesOffset =
+      this.genOffset + MAX_BOSS_TIERS + MAX_BOSS_TIERS * UNLOCKS_PER_BOSS;
     this.difficultyId = opts.difficulty ?? "hunter";
     this.character = createCharacter(opts.balance);
     this.derived = deriveStats(this.character, opts.balance);
-    this.buildArena();
+    this.arena = this.buildArena(1);
     this.spawnPlayer();
   }
 
   // ─────────────────────────────────────────────────────────── arena
 
-  private buildArena(): void {
+  /**
+   * Buduje układ areny dla rundy i podmienia listę przeszkód w miejscu —
+   * `obstacles` jest `readonly`, bo AI i kolizje trzymają do niej referencję.
+   *
+   * `avoid` chroni środek areny (punkt odrodzenia) i aktualną pozycję gracza:
+   * arena wymienia się w trakcie oddechu, więc drzewo nie ma prawa wyrosnąć
+   * tam, gdzie ktoś stoi.
+   */
+  private buildArena(round: number): ArenaLayout {
+    const s = this.store;
+    const p = this.player;
+    const avoid = [{ x: 0, y: 0, r: 1.2 }];
+    if (s.alive[p]) avoid.push({ x: s.x[p]!, y: s.y[p]!, r: s.radius[p]! + 1.0 });
+
+    const layout = generateArena(round, this.rng.seed, avoid);
     this.obstacles.length = 0;
-    // Zasada §9.3: minimum jedna przeszkoda zrywająca linię wzroku wrogom dystansowym.
-    const pillars = 5;
-    for (let i = 0; i < pillars; i++) {
-      const a = (i / pillars) * TAU + 0.4;
-      const r = ARENA_RADIUS * 0.55;
-      this.obstacles.push({ x: Math.cos(a) * r, y: Math.sin(a) * r, r: 1.15 });
-    }
+    for (const o of layout.obstacles) this.obstacles.push(o);
+    return layout;
+  }
+
+  /**
+   * Ustawia arenę pod bieżącą rundę **bez ogłaszania przejścia**. Potrzebne po
+   * wczytaniu zapisu: konstruktor zbudował arenę rundy 1, a zapis przywraca
+   * na przykład dwudziestą — bez tego każdy powrót do gry lądował na pierwszej
+   * planszy, mimo że licznik rund mówił co innego.
+   */
+  resetArena(): void {
+    this.arena = this.buildArena(this.encounter.index + 1);
+    this.announcedSpecies = this.speciesStage;
+  }
+
+  /**
+   * Przejście na następną arenę. Wołane po wygranym poziomie, w chwili
+   * rozpoczęcia oddechu — nagrodą za czyszczenie fali jest **zmiana miejsca**,
+   * a nie tylko rosnąca liczba w HUD-zie.
+   *
+   * Łupy leżące na ziemi zostają: arena się zmienia, ale nikt nie zabiera
+   * graczowi tego, co już wypadło.
+   */
+  private advanceArena(round: number): void {
+    const before = this.arena;
+    this.arena = this.buildArena(round);
+    this.bus.emit("arena:changed", {
+      round: this.arena.round,
+      biomeId: this.arena.biome.id,
+      biomeName: this.arena.biome.name,
+      biomeIndex: this.arena.biomeIndex,
+      /** Zmiana biomu (co `ROUNDS_PER_BIOME` rund) to inny kolor i inny horyzont. */
+      newBiome: before.biome.id !== this.arena.biome.id,
+      roundsPerBiome: ROUNDS_PER_BIOME,
+      zoneLevel: zoneLevelFor(round),
+    });
   }
 
   private spawnPlayer(): void {
@@ -1103,6 +1187,10 @@ export class World {
         const extra = this.loot.generateItem(this.encounter.zoneLevel);
         this.spawnPickup(s.x[e] + i * 0.7, s.y[e] + 0.6, { type: "item", amount: 1, item: extra });
       }
+      // Rdzeń kowala — jedyne źródło tej waluty w grze. Leży na ziemi jak każdy
+      // inny łup: nagroda, którą gracz podnosi, czyta się mocniej niż licznik,
+      // który po cichu urósł.
+      this.spawnPickup(s.x[e] - 0.9, s.y[e] + 0.8, { type: "core", amount: 1 });
     }
 
     s.despawn(e);
@@ -1324,7 +1412,8 @@ export class World {
     s.prevY[id] = s.y[id];
     s.radius[id] = 0.35;
     s.lifetime[id] = 45;
-    s.payload[id] = payload.type === "gold" ? 0 : payload.type === "potion" ? 1 : 2;
+    s.payload[id] =
+      payload.type === "gold" ? 0 : payload.type === "potion" ? 1 : payload.type === "core" ? 3 : 2;
     this.pickups.set(id, payload);
   }
 
@@ -1421,6 +1510,16 @@ export class World {
       this.character.gold += payload.amount;
       this.bus.emit("gold:gained", { amount: payload.amount, total: this.character.gold });
       this.bus.emit("sfx", { name: "gold" });
+    } else if (payload.type === "core") {
+      const first = !this.character.smithUnlocked;
+      this.character.forgeCores += payload.amount;
+      this.character.smithUnlocked = true;
+      this.bus.emit("forge:core", {
+        total: this.character.forgeCores,
+        first,
+        target: FORGE_CORE_COST,
+      });
+      this.bus.emit("sfx", { name: first ? "forgeUnlock" : "forgeCore" });
     } else if (payload.type === "potion") {
       const max = this.balance.combat.player.potions.slots;
       this.character.potions = Math.min(max, this.character.potions + 1);
@@ -1533,6 +1632,10 @@ export class World {
         const breather = this.encounter.index % 3 === 0 ? 12 : 4;
         this.encounter.intermission = breather;
         this.bus.emit("wave:cleared", { wave: this.encounter.index, nextIn: breather });
+        // Wygrany poziom = nowa arena. Wymieniamy ją na starcie oddechu, żeby
+        // gracz zwiedził nowe miejsce, zanim wejdzie następna fala — przejście
+        // po rozpoczęciu walki byłoby wyrwaniem gruntu pod nogami.
+        this.advanceArena(this.encounter.index + 1);
       }
       return;
     }
@@ -1546,10 +1649,11 @@ export class World {
   private startEncounter(): void {
     const e = this.encounter;
     e.index++;
-    e.zoneLevel = Math.min(25, 1 + Math.floor((e.index - 1) / 2));
+    e.zoneLevel = zoneLevelFor(e.index);
     e.active = true;
     e.isMiniboss = e.index % 5 === 0;
     e.isElite = !e.isMiniboss && this.rng.ai.chance(this.balance.enemies.elite.chancePerPack);
+    this.announceSpecies();
 
     const rng = this.rng.ai;
     const roster = this.enemyDefs;
@@ -1602,7 +1706,9 @@ export class World {
    * dopiero za kilka fal, gdy los wreszcie je wybierze.
    */
   private unlockAfterBoss(): void {
-    const tier = this.character.bossesDefeated + 1;
+    // `count` chroni przed zapisem bez tego pola: `undefined + 1` to `NaN`,
+    // który zapisałby się z powrotem do postaci i wyłączył odblokowania na stałe.
+    const tier = count(this.character.bossesDefeated) + 1;
     this.character.bossesDefeated = tier;
     if (tier > MAX_BOSS_TIERS) return;
 
@@ -1640,46 +1746,164 @@ export class World {
     this.bus.emit("sfx", { name: "alert", x: s.x[summoner]!, y: s.y[summoner]! });
   }
 
+  // ──────────────────────────────────────────────────────────── kowal
+
+  /** Przedmioty z plecaka o podanych identyfikatorach. Pomija nieznane. */
+  private itemsByIds(ids: readonly string[]): Item[] {
+    const wanted = new Set(ids);
+    return this.character.inventory.filter((it) => wanted.has(it.id));
+  }
+
+  /**
+   * Wycena przekucia dla wskazanych przedmiotów z plecaka. Warstwa interfejsu
+   * pyta o to na każde kliknięcie, więc liczy się tylko to, co widać.
+   */
+  forgeQuoteFor(ids: readonly string[]): ForgeQuote {
+    return forgeQuote(this.itemsByIds(ids), this.character.forgeCores);
+  }
+
+  /**
+   * Przekucie: zabiera wskazane przedmioty oraz rdzeń i zwraca **losową legendę**.
+   *
+   * Item level bierzemy z aktualnej strefy, ale nie niżej niż najlepszy z oddanych
+   * przedmiotów — inaczej przekucie znoszonego, ale wysokopoziomowego łupu dawałoby
+   * legendę słabszą od materiału, z którego powstała.
+   */
+  reforge(ids: readonly string[]): { ok: boolean; message: string; item?: Item } {
+    const items = this.itemsByIds(ids);
+    const quote = forgeQuote(items, this.character.forgeCores);
+    if (!quote.ready) return { ok: false, message: quote.reason || "Nie da się przekuć" };
+
+    const level = Math.max(
+      this.encounter.zoneLevel,
+      ...items.map((it) => it.itemLevel),
+    );
+
+    const doomed = new Set(items.map((it) => it.id));
+    this.character.inventory = this.character.inventory.filter((it) => !doomed.has(it.id));
+    this.character.forgeCores -= FORGE_CORE_COST;
+    this.character.forgedLegendaries += 1;
+
+    const item = this.loot.generateItem(level, "legendary");
+    this.character.inventory.push(item);
+
+    this.bus.emit("forge:reforged", {
+      id: item.id,
+      name: item.name,
+      slot: item.slot,
+      itemLevel: item.itemLevel,
+      consumed: items.length,
+      power: quote.power,
+      coresLeft: this.character.forgeCores,
+    });
+    this.bus.emit("sfx", { name: "forge" });
+    return { ok: true, message: `${item.name} (poz. ${item.itemLevel})`, item };
+  }
+
   /** Indeks bossa danego tieru w `enemyDefs`. Układ tablicy ustala konstruktor. */
   private bossDefIdx(tier: number): number {
     return this.genOffset + (Math.min(MAX_BOSS_TIERS, Math.max(1, tier)) - 1);
   }
 
   /**
-   * Pula typów do losowania fali: ręczny roster wg rytmu strefy **plus**
-   * wszystko, co odblokowały pokonane bossy. Pula rośnie, więc dwudziesta fala
-   * nie wygląda jak druga.
+   * Etap gatunku. Zmienia się co dziesięć rund, ale **nie szybciej, niż gracz
+   * pokona dwóch bossów** — nowy gatunek jest nagrodą za bossów, a nie za
+   * przewinięcie licznika fal. Etap 0 to ręczny roster: gobliny, szkielety, orki.
+   */
+  get speciesStage(): number {
+    // Oba licznika czytamy przez `count`: wczytany zapis bywa starszy od kodu
+    // i nie zna `bossesDefeated`. Bez tego `Math.min` propagował `NaN` dalej,
+    // a gra nie wstawała wcale — brakujące pole w zapisie nie ma prawa być
+    // błędem krytycznym (DoD §18.5).
+    const byRound = Math.floor((count(this.encounter.index) - 1) / ROUNDS_PER_SPECIES);
+    const byBoss = Math.floor(count(this.character.bossesDefeated) / BOSSES_PER_SPECIES);
+    return Math.max(0, Math.min(byRound, byBoss, MAX_SPECIES));
+  }
+
+  /** Nazwa aktualnego gatunku — HUD nazywa to, z czym gracz właśnie walczy. */
+  get speciesName(): string {
+    const stage = this.speciesStage;
+    return stage === 0 ? "Hordy Pogranicza" : speciesNameFor(stage);
+  }
+
+  /** Ostatni ogłoszony etap — zmiana gatunku ma zostać zauważona dokładnie raz. */
+  private announcedSpecies = -1;
+
+  private announceSpecies(): void {
+    const stage = this.speciesStage;
+    if (stage === this.announcedSpecies) return;
+    const first = this.announcedSpecies < 0;
+    this.announcedSpecies = stage;
+    // Pierwsze wejście do gry nie jest „zmianą gatunku" — na starcie i tak nie
+    // ma z czym porównać, a komunikat zjadłby uwagę potrzebną na naukę walki.
+    if (first || stage === 0) return;
+
+    const info = this.bestiary.speciesInfo[stage - 1];
+    this.bus.emit("species:changed", {
+      stage,
+      name: info?.name ?? this.speciesName,
+      tell: info?.tell ?? "",
+      units: (this.bestiary.species[stage - 1] ?? []).map((d) => ({
+        name: d.name,
+        archetype: d.archetype,
+        traits: traitLabels(d.traits),
+      })),
+    });
+  }
+
+  /**
+   * Pula typów do losowania fali. Trzon bierze się z **gatunku aktualnego etapu**
+   * — co dziesięć rund cały skład wymienia się na inny, mocniejszy. Rytm strefy
+   * decyduje, które archetypy wchodzą: lekka fala to roje i strzelcy, ciężka
+   * dokłada bruisera i bombera (GDD §9.2).
    */
   private spawnPool(): number[] {
-    const idxOf = (id: string) => this.enemyDefs.findIndex((d) => d.id === id);
     const tier = ((this.encounter.index - 1) % 3) as 0 | 1 | 2;
-    const base =
-      tier === 0
-        ? ["goblin_scout", "goblin_scout", "goblin_thrower"]
-        : tier === 1
-          ? ["goblin_scout", "goblin_thrower", "skeleton_warrior", "plague_crawler"]
-          : ["skeleton_warrior", "skeleton_archer", "orc_berserker", "orc_shaman", "plague_crawler"];
+    const stage = this.speciesStage;
+    const pool: number[] = [];
 
-    const pool = base.map(idxOf).filter((i) => i >= 0);
+    if (stage === 0) {
+      const idxOf = (id: string) => this.enemyDefs.findIndex((d) => d.id === id);
+      const base =
+        tier === 0
+          ? ["goblin_scout", "goblin_scout", "goblin_thrower"]
+          : tier === 1
+            ? ["goblin_scout", "goblin_thrower", "skeleton_warrior", "plague_crawler"]
+            : ["skeleton_warrior", "skeleton_archer", "orc_berserker", "orc_shaman", "plague_crawler"];
+      for (const idx of base.map(idxOf)) if (idx >= 0) pool.push(idx);
+    } else {
+      // Slot = pozycja archetypu w `UNIT_ARCHETYPES`:
+      // 0 rój, 1 strzelec, 2 bruiser, 3 kaster, 4 bomber.
+      const slots =
+        tier === 0 ? [0, 0, 1] : tier === 1 ? [0, 1, 3, 4] : [0, 1, 2, 2, 3, 4];
+      const base = this.speciesOffset + (stage - 1) * UNITS_PER_SPECIES;
+      for (const slot of slots) pool.push(base + slot);
+    }
 
-    // Odblokowane jednostki wchodzą z podwójną wagą względem startowych —
-    // nagroda za bossa ma być widoczna w następnej fali, nie statystycznie.
+    /*
+     * Domieszka z ostatnich dwóch bossów. Nagroda za bossa ma zostać widoczna,
+     * ale tylko dwa ostatnie tiery: przy wszystkich czterdziestu pula puchła do
+     * osiemdziesięciu wpisów i gatunek etapu przestawał być rozpoznawalny —
+     * fala zamieniała się w przegląd całego bestiariusza.
+     */
     const unlockedBase = this.genOffset + MAX_BOSS_TIERS;
-    const unlockedCount = Math.min(this.character.bossesDefeated, MAX_BOSS_TIERS) * UNLOCKS_PER_BOSS;
-    for (let i = 0; i < unlockedCount; i++) {
-      pool.push(unlockedBase + i, unlockedBase + i);
+    const unlockedCount = Math.min(count(this.character.bossesDefeated), MAX_BOSS_TIERS) * UNLOCKS_PER_BOSS;
+    for (let i = Math.max(0, unlockedCount - UNLOCKS_PER_BOSS * 2); i < unlockedCount; i++) {
+      pool.push(unlockedBase + i);
     }
     return pool;
   }
 
   /**
-   * Koszt budżetowy typu. Dla wpisów ręcznych zostaje strojona tabela; dla
-   * generowanych liczymy go z HP i obrażeń, bo inaczej każda nowa jednostka
-   * wymagałaby ręcznego wpisu i fale rozjechałyby się co do trudności.
+   * Koszt budżetowy typu. Dla wpisów ręcznych zostaje strojona tabela, wpisy
+   * generowane przynoszą własny `cost` — **względny w obrębie etapu**, nie
+   * liczony z HP. Szacowanie z HP kończyło się falą z jednym wrogiem w setnej
+   * rundzie: HP potworów rośnie wykładniczo, a budżet fali liniowo.
    */
   private spawnCost(defIdx: number): number {
     const def = this.enemyDefs[defIdx];
     if (!def) return 2;
+    if (def.cost !== undefined) return def.cost;
     const manual: Record<string, number> = {
       goblin_scout: 1,
       goblin_thrower: 1.3,

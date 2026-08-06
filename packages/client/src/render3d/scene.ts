@@ -33,13 +33,8 @@ import { Camera } from "@babylonjs/core/Cameras/camera";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
-import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
+import { Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { Mesh } from "@babylonjs/core/Meshes/mesh";
-import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
-import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
-import { CreateTorus } from "@babylonjs/core/Meshes/Builders/torusBuilder";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { GlowLayer } from "@babylonjs/core/Layers/glowLayer";
 import { DefaultRenderingPipeline } from "@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline";
 import { ColorCurves } from "@babylonjs/core/Materials/colorCurves";
@@ -48,8 +43,9 @@ import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
 import "@babylonjs/core/Rendering/depthRendererSceneComponent";
 import "@babylonjs/core/Materials/Textures/Loaders/index";
 
-import { ARENA_RADIUS } from "@ms/core";
+import { generateArena, type ArenaLayout, type BiomeDef } from "@ms/core";
 import { toColor3 } from "./bodies.ts";
+import { Arena3d, hazeTarget, mixHex } from "./arena3d.ts";
 
 /**
  * Dwa widoki. TPP jest domyślny; rzut 3/4 zostaje w Opcjach, bo lepiej czyta
@@ -82,6 +78,13 @@ const TPP_HEIGHT = 1.35;
 const TPP_LOOK_HEIGHT = 1.5;
 const TPP_FOV = 0.95;
 
+/**
+ * Paleta startowa. Od wprowadzenia biomów jest tylko **wartością domyślną** —
+ * właściwe kolory przynosi `BiomeDef` z rdzenia i wgrywa je `applyBiome`.
+ * Zostaje jako punkt odniesienia dla efektów, które nie zależą od miejsca
+ * (ślady ciosów, cienie kropelkowe) i jako awaryjny stan sceny przed pierwszą
+ * areną.
+ */
 export const PALETTE = {
   fog: 0x080b12,
   ground: 0x151a25,
@@ -96,6 +99,21 @@ export const PALETTE = {
   ambientGround: 0x1a1420,
 } as const;
 
+/**
+ * Gęstość mgły wykładniczej w TPP. Zeszła z 0.038, gdy arena zyskała horyzont:
+ * przy poprzedniej wartości widoczność kończyła się kilka metrów za rantem,
+ * więc góry i tak nie miałyby jak się pokazać. Sam horyzont mgły nie używa
+ * (`fogEnabled = false` w `arena3d.ts`) — to ustawienie dotyczy areny.
+ */
+const FOG_DENSITY = 0.03;
+
+/**
+ * Bazowa ekspozycja kadru. Wystawiona, bo efekt przejścia na nową arenę podbija
+ * ją na chwilę i musi mieć do czego wrócić — odczyt bieżącej wartości z potoku
+ * dawałby dryf: każde kolejne przejście startowałoby z podbitej wartości.
+ */
+export const BASE_EXPOSURE = 1.08;
+
 export interface SceneBundle {
   engine: AbstractEngine;
   scene: Scene;
@@ -105,12 +123,18 @@ export interface SceneBundle {
   glow: GlowLayer;
   pipeline: DefaultRenderingPipeline;
   sun: DirectionalLight;
-  arenaRim: Mesh;
+  /** Podłoże, przeszkody i horyzont. Wymieniane po każdym wygranym poziomie. */
+  arena: Arena3d;
   /**
    * Ustawia kadr. `yaw` jest używany wyłącznie w TPP — to kierunek, w którym
    * patrzy kamera (radiany, zgodnie z osią świata).
    */
   lookAtWorld(x: number, z: number, shakeX: number, shakeY: number, yaw: number): void;
+  /**
+   * Wstawia nową arenę: kolory sceny i świateł z biomu, świeży układ przeszkód
+   * i — przy zmianie biomu — nowy widok na horyzoncie.
+   */
+  setArena(layout: ArenaLayout): void;
   resize(): void;
 }
 
@@ -208,7 +232,7 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
     // Perspektywa daje realne odległości od kamery, więc mgła wykładnicza
     // działa tak, jak powinna — i jest tańsza w strojeniu niż zakres liniowy.
     scene.fogMode = Scene.FOGMODE_EXP2;
-    scene.fogDensity = 0.038;
+    scene.fogDensity = FOG_DENSITY;
   } else {
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogStart = 52;
@@ -219,15 +243,21 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
   const camera = new TargetCamera("cam", Vector3.Zero(), scene);
   scene.activeCamera = camera;
 
+  /*
+   * Dalsza płaszczyzna odcięcia musi objąć **kopułę nieba i horyzont**: kopuła
+   * stoi 200 j. od środka świata, kamera bywa 27 j. od niego, więc 180 j. ucinało
+   * całą panoramę. Precyzja bufora głębi przy `minZ = 0.35` i tym zakresie
+   * wystarcza — arena to kilkadziesiąt metrów, nie kilometry.
+   */
   if (mode === "iso") {
     camera.mode = Camera.ORTHOGRAPHIC_CAMERA;
-    camera.minZ = -80;
-    camera.maxZ = 220;
+    camera.minZ = -260;
+    camera.maxZ = 340;
   } else {
     camera.mode = Camera.PERSPECTIVE_CAMERA;
     camera.fov = TPP_FOV;
     camera.minZ = 0.35;
-    camera.maxZ = 180;
+    camera.maxZ = 340;
   }
 
   // Kierunek patrzenia rzutu 3/4 — kamera stoi „nad i z boku", stały kąt.
@@ -270,7 +300,10 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
   shadows.normalBias = 0.02;
 
   // ── arena ─────────────────────────────────────────────────────────────────
-  const arenaRim = buildArena(scene, shadows);
+  // Podłoże powstaje raz, kolory i horyzont wgrywa `setArena` — z biomu, który
+  // przynosi rdzeń. Pierwszą arenę wstawiamy tu, żeby scena nigdy nie istniała
+  // w stanie „bez miejsca".
+  const arena = new Arena3d(scene, shadows);
 
   // ── warstwa poświaty ──────────────────────────────────────────────────────
   // To ona sprawia, że emblemat gracza i oczy wrogów rozjaśniają otoczenie.
@@ -304,11 +337,13 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
   pipeline.imageProcessingEnabled = true;
   const ip = pipeline.imageProcessing;
   ip.vignetteEnabled = true;
-  ip.vignetteWeight = 1.8;
+  // 1.8 gasiło górny pas kadru do czerni razem z całym horyzontem — winieta ma
+  // kierować wzrok do środka, a nie zasłaniać widok, na który patrzy gracz.
+  ip.vignetteWeight = 1.25;
   ip.vignetteStretch = 0.4;
   ip.vignetteColor = new Color4(0.02, 0.03, 0.06, 0);
   ip.contrast = 1.1;
-  ip.exposure = 1.08;
+  ip.exposure = BASE_EXPOSURE;
   ip.toneMappingEnabled = true;
 
   const curves = new ColorCurves();
@@ -339,7 +374,7 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
     glow,
     pipeline,
     sun,
-    arenaRim,
+    arena,
     lookAtWorld(x, z, shakeX, shakeY, yaw) {
       if (mode === "tpp") {
         // Kamera siedzi na łuku za postacią: cofnięta o `TPP_DISTANCE`
@@ -367,6 +402,10 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
       // areny — mniejszy obszar to ostrzejszy cień przy tej samej rozdzielczości.
       sun.position.set(x + 24, 46, z - 20);
     },
+    setArena(layout) {
+      applyBiome(scene, ambient, sun, layout.biome);
+      arena.setArena(layout);
+    },
     resize() {
       if (mode === "tpp") return; // perspektywa skaluje się sama z proporcji kadru
       const aspect = engine.getRenderWidth() / Math.max(1, engine.getRenderHeight());
@@ -378,66 +417,37 @@ export function buildScene(engine: AbstractEngine, quality: Quality, mode: Camer
   };
 
   bundle.resize();
+  // Runda 1 — scena nigdy nie istnieje w stanie „bez biomu". Właściwą arenę
+  // (z aktualnym numerem rundy i układem przeszkód) wstawi renderer po starcie.
+  bundle.setArena(generateArena(1, 1));
   return bundle;
 }
 
 /**
- * Arena. Trzy warstwy geometrii zamiast tekstury: płyta, wewnętrzny podest
- * i świecący rant. Wszystko statyczne i zamrożone — podłoże nie zmienia się
- * przez całą sesję, więc nie ma powodu, żeby silnik co klatkę liczył jego macierz.
+ * Wgrywa biom w scenę: mgłę, kolor kadru i barwy świateł. To ta funkcja decyduje,
+ * czy arena jest lodowa, czy rozpalona — geometria zostaje ta sama, zmienia się
+ * światło (README §Klimat: klimat robi światło, nie tekstury).
  */
-function buildArena(scene: Scene, shadows: ShadowGenerator): Mesh {
-  const R = ARENA_RADIUS;
-
-  const groundMat = new StandardMaterial("groundMat", scene);
-  groundMat.diffuseColor = toColor3(PALETTE.ground);
-  groundMat.specularColor = Color3.Black();
-  groundMat.freeze();
-
-  // Wielki dysk poza areną — bez niego mgła urywa się na krawędzi i widać pustkę.
-  const outer = CreateGround("outer", { width: R * 9, height: R * 9, subdivisions: 1 }, scene);
-  outer.material = groundMat;
-  outer.position.y = -0.35;
-  outer.receiveShadows = true;
-  outer.freezeWorldMatrix();
-  outer.isPickable = false;
-
-  const plateMat = new StandardMaterial("plateMat", scene);
-  plateMat.diffuseColor = toColor3(PALETTE.groundInner);
-  plateMat.specularColor = Color3.Black();
-  plateMat.freeze();
-
-  const plate = CreateCylinder("plate", { diameter: R * 2, height: 0.7, tessellation: 72 }, scene);
-  plate.material = plateMat;
-  plate.position.y = -0.35;
-  plate.receiveShadows = true;
-  plate.freezeWorldMatrix();
-  plate.isPickable = false;
-
-  const innerMat = new StandardMaterial("innerMat", scene);
-  innerMat.diffuseColor = toColor3(PALETTE.groundInner).scale(1.22);
-  innerMat.specularColor = Color3.Black();
-  innerMat.freeze();
-
-  const inner = CreateCylinder("inner", { diameter: R * 1.1, height: 0.16, tessellation: 64 }, scene);
-  inner.material = innerMat;
-  inner.position.y = 0.01;
-  inner.receiveShadows = true;
-  inner.freezeWorldMatrix();
-  inner.isPickable = false;
-
-  // Rant: torus w kolorze emisyjnym. Pulsuje w `sync`, więc jako jedyny
-  // element areny nie jest zamrożony.
-  const rimMat = new StandardMaterial("rimMat", scene);
-  rimMat.diffuseColor = Color3.Black();
-  rimMat.emissiveColor = toColor3(PALETTE.rim).scale(0.55);
-  rimMat.specularColor = Color3.Black();
-
-  const rim = CreateTorus("rim", { diameter: R * 2, thickness: 0.16, tessellation: 80 }, scene);
-  rim.material = rimMat;
-  rim.position.y = 0.06;
-  rim.isPickable = false;
-
-  shadows.getShadowMap()?.renderList?.push();
-  return rim;
+function applyBiome(
+  scene: Scene,
+  ambient: HemisphericLight,
+  sun: DirectionalLight,
+  biome: BiomeDef,
+): void {
+  const fog = toColor3(biome.fog);
+  scene.clearColor = new Color4(fog.r, fog.g, fog.b, 1);
+  /*
+   * Mgła gaśnie do **poświaty horyzontu**, nie do koloru tła.
+   *
+   * Przy gaszeniu do ciemnego `fog` dalekie podłoże wychodziło niemal czarne,
+   * a kopuła nieba nad nim jasna — na styku powstawała czarna obręcz wokół
+   * areny, czytana jak mur. Wspólny cel dla mgły i nieba zszywa jedno z drugim.
+   */
+  scene.fogColor = toColor3(mixHex(biome.fog, hazeTarget(biome), 0.5));
+  scene.ambientColor = toColor3(biome.ambientGround);
+  ambient.diffuse = toColor3(biome.ambientSky);
+  ambient.groundColor = toColor3(biome.ambientGround);
+  sun.diffuse = toColor3(biome.sun);
 }
+
+
